@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "CustomGrassDataAsset.h"
-#include "CustomGrassSceneViewExtension.h"
 #include "ShaderParameterStruct.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 

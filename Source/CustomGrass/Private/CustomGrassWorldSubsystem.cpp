@@ -5,7 +5,6 @@
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassPrimitiveComponent.h"
 #include "CustomGrassSceneProxy.h"
-#include "CustomGrassSceneViewExtension.h"
 #include "CustomGrassSettings.h"
 #include "Landscape.h"
 #include "LandscapeStreamingProxy.h"
