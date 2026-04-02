@@ -1,0 +1,97 @@
+﻿struct FGrassBladeData
+{
+	float3 Position;
+	float2 Facing;
+	float3 TerrainNormal;
+	float Height;
+	float Width;
+	float Tilt;
+	float Bend;
+	uint Hash;
+};
+
+static const int GrassBladeVertexCount = 15;
+
+/* Utilities */
+
+/** Taken from here: https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/ */
+uint PCGHash(uint Seed)
+{
+	uint State = Seed * 747796405u + 2891336453u;
+	uint Word = ((State >> ((State >> 28u) + 4u)) ^ State) * 277803737u;
+	return (Word >> 22u) ^ Word;
+}
+
+uint PCGHashState(inout uint RNGState)
+{
+	RNGState = RNGState * 747796405u + 2891336453u;
+	uint Word = ((State >> ((State >> 28u) + 4u)) ^ State) * 277803737u;
+	return (Word >> 22u) ^ Word;
+}
+
+/** Normalized [0..1] version. */
+float FloatPCGHashState(inout uint RNGState)
+{
+	return float(PCGHash(RNGState)) / float(0xFFFFFFFFu);
+}
+
+/** Convert precomputed hash to a [0..1] float (without recalculation). */
+float HashUIntToFloat(uint Hash)
+{
+	return float(Hash) / float(0xFFFFFFFFu);
+}
+
+float2 Rotate2DVec(float2 Vec, float Angle)
+{
+	float Sin, Cos;
+	sincos(Angle, Sin, Cos);
+	
+	return normalize(float2(
+		Vec.x * Cos - Vec.y * Sin,
+		Vec.x * Sin + Vec.y * Cos
+	));
+}
+
+bool IsInsideFrustum(float3 Center, float Radius)
+{
+	float4 Clip = mul(float4(Center, 1.0f), ViewProjectionMatrix);
+
+	return	Clip.x >= -Clip.w - Radius && Clip.x <= Clip.w + Radius &&
+			Clip.y >= -Clip.w - Radius && Clip.y <= Clip.w + Radius &&
+			Clip.z >= -Radius		   && Clip.z <= Clip.w + Radius;
+}
+
+/**
+ * Projects vector onto the plane defined by its unit normal.
+ * @returns normalized projected vector
+ */
+float3 ProjectOntoPlane(float3 Vec, float3 Normal)
+{
+	return normalize(Vec - Normal * dot(Vec, Normal));
+}
+
+/**
+ * Evaluates the cubic Bézier curve defined by points p0 to p3 at the value t.
+ */
+float3 CubicBezier(float3 p0, float3 p1, float3 p2, float3 p3, float t)
+{
+	/* Implemented using De Casteljau's algorithm; taken from BezierUtilities.h */
+	
+	float3 p01  = lerp(p0, p1, t);
+	float3 p12  = lerp(p1, p2, t);
+	float3 p23  = lerp(p2, p3, t);
+	float3 p012 = lerp(p01, p12, t);
+	float3 p123 = lerp(p12, p23, t);
+	return lerp(p012, p123, t);
+}
+
+/**
+ * Same as CubicBezier above, but evaluates the derivative.
+ */
+float3 CubicBezierDerivative(float3 p0, float3 p1, float3 p2, float3 p3, float t)
+{
+	float3 p01 = lerp(p0, p1, t);
+	float3 p12 = lerp(p1, p2, t);
+	float3 p23 = lerp(p2, p3, t);
+	return 3.0f * (lerp(p12, p23, t) - lerp(p01, p12, t));
+}

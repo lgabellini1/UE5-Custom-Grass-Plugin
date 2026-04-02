@@ -1,0 +1,346 @@
+﻿#include "/Engine/Public/Platform.ush"
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/Landscape/LandscapeCommon.ush"
+#include "Shared.ush"
+
+/* COMPUTE SHADER #1: instance grass blades */
+
+RWStructuredBuffer<FGrassBladeData> OutInstanceDataBuffer;
+
+/** Accumulator for the number of visible instances on each tile. */
+RWBuffer<uint> OutInstanceCounter;
+
+/** Tile offset inside the buffers. */
+int TileIndex;
+
+int InstanceCountPerTileX;
+int InstanceCountPerTileY;
+
+/* Updates on every view-change. */
+//cbuffer CameraData
+//{
+    float4 ViewOrigin;
+	float4x4 ViewProjectionMatrix;
+//}
+
+/** Used for culling far grass blades. */
+float MaxRenderDistance;
+
+/* All landscape data (except the heightmap texture). */
+//cbuffer SceneLandscapeData
+//{
+	float4 HeightmapScaleBias;
+
+	int ComponentSizeQuads;
+	int SectionBaseX;
+	int SectionBaseY;
+
+	float4x4 LandscapeLocalToWorld;
+	float4x4 LandscapeWorldToLocal;
+//}
+
+Texture2D<float4> HeightmapTexture;
+SamplerState HeightmapSampler;
+
+//cbuffer GrassParams
+//{
+	float GrassParams_Height;
+	float GrassParams_RandHeight;
+
+ 	float GrassParams_Width;
+	float GrassParams_RandWidth;
+
+	float GrassParams_Tilt;
+	float GrassParams_RandTilt;
+
+	float GrassParams_Bend;
+	float GrassParams_RandBend;
+
+	float GrassParams_ClumpStrength;
+	float GrassParams_RandClumpStrength;
+
+	uint GrassParams_ClumpFacingType;
+	float GrassParams_ClumpFacingStrength;
+
+	int GrassParams_ClumpGridSize;
+//}
+
+/**
+ * Scale a value randomly (according to hash) within a certain
+ * percentage, to introduce variation.
+ */
+float RandomScaleValue(float Value, float Perc, uint Hash)
+{
+	float ScalingFactor = Value * Perc *
+		(HashUIntToFloat(Hash) * 2.f - 1.f); // Random in [-1..1]
+	return Value + ScalingFactor;
+}
+
+/**
+ * Test a grass blade instance for frustum and distance culling.
+ */
+bool TestInstanceCulling(FGrassBladeData InstanceData)
+{
+	float3 Center = InstanceData.Position + float3(0, 0, InstanceData.Height * 0.5f);
+	float Radius  = InstanceData.Height * 0.5f;
+	
+	bool FrustumCulling = !IsInsideFrustum(Center, Radius);
+
+	float3 Delta = InstanceData.Position - ViewOrigin.xyz;
+	bool DistanceCulling = dot(Delta, Delta) > MaxRenderDistance * MaxRenderDistance;
+	// Equivalent to length(Delta) > MaxRenderDistance; avoids expensive sqrt calc in length()
+	
+	return FrustumCulling || DistanceCulling;
+}
+
+/**
+ * Sample landscape heightmap at the specified location,
+ * while unpacking and scaling to a useful value.
+ * @param UV location to sample
+ * @returns Z in local-space units
+ */
+float SampleHeightmap(float2 UV)
+{
+	// Heightmap uses a 32bit RGBA format,
+	// but only the first two channels represent the actual 16-bit heightmap, so we need to unpack it.
+	float2 PackedHeight = HeightmapTexture.SampleLevel(HeightmapSampler, UV, 0).xy;
+
+	return DecodePackedHeight(PackedHeight);
+}
+
+/**
+ * Calculate absolute world position from local position in the tile (as UV)
+ * and landscape height at that location.
+ */
+float3 GetAbsoluteWorldPos(float2 UV, float LocalHeight)
+{
+	// Map position into local quad-space [0..NumQuads].
+	float2 LocalQuadPos = UV * ComponentSizeQuads;
+
+	// Rebase local tile position into local landscape position.
+	float2 GlobalQuadPos = LocalQuadPos + float2(SectionBaseX, SectionBaseY);
+	float3 LocalPos = float3(GlobalQuadPos, LocalHeight);
+
+	return mul(float4(LocalPos, 1.0f), LandscapeLocalToWorld).xyz;
+}
+
+/** Apply semi-random jitter to values to break the regular, grid-like distribution in UV space, using noise. */
+float2 ApplyJitter(float2 UV, uint Hash)
+{
+	uint RNGState = Hash;
+	
+	float CellSizeX = 1.0f / (float)InstanceCountPerTileX;
+	float CellSizeY = 1.0f / (float)InstanceCountPerTileY;
+
+	float2 Jitter = float2(
+		(FloatPCGHashState(RNGState) - 0.5f) * CellSizeX,
+		(FloatPCGHashState(RNGState) - 0.5f) * CellSizeY
+	);
+	
+	return saturate(UV + Jitter);
+}
+
+float2 ComputeFacing(float3 Position, uint Hash, float2 ToClumpCenter)
+{
+	float2 BaseFacing = normalize(float2(
+		HashUIntToFloat(Hash) * 2.0f - 1.0f,
+		HashUIntToFloat(Hash ^ 0x9e3779b9u) * 2.0f - 1.0f
+	));
+
+	float2 ClumpFacing;
+	switch (GrassParams_ClumpFacingType)
+	{
+	case 0: // NoClumpFacing
+	default:
+		ClumpFacing = BaseFacing;
+		break;
+	case 1: // SameDirection
+		ClumpFacing = float2(1.0f, 1.0f);
+		break;
+	case 2: // FaceClumpCenter
+		ClumpFacing = normalize(ToClumpCenter);
+		break;
+	case 3: // OppositeClumpCenter
+		ClumpFacing = normalize(-ToClumpCenter);
+		break;
+	}
+	
+	float2 FinalFacing = lerp(BaseFacing, ClumpFacing,
+		saturate(RandomScaleValue(GrassParams_ClumpFacingStrength, 0.1f, HashUIntToFloat(Hash))));
+
+	bool IsDegenerate = FinalFacing == float2(0, 0);
+	
+	return select(IsDegenerate, float2(0.1, 0.1), FinalFacing);
+	
+	/*
+	float2 ToCameraDir = normalize(ViewOrigin.xy - Position.xy);
+
+	float M = 1.f;
+
+	float AlignmentToCamera = abs(dot(BaseFacing, ToCameraDir));
+	AlignmentToCamera = min(AlignmentToCamera, M) / M;
+
+	float Orientation = sign(dot(BaseFacing, ToCameraDir));
+	float MaxAngle = PI * 0.25f;
+	float Angle = min(RandomScaleValue(MaxAngle, 0.15f, Hash), MaxAngle);
+
+	float2 CorrectedFacing = float2(
+		ToCameraDir.x * cos(Angle) - ToCameraDir.y * sin(Angle),
+		ToCameraDir.x * sin(Angle) + ToCameraDir.y * cos(Angle)
+	) * Orientation;
+	
+	return normalize(lerp(BaseFacing, CorrectedFacing, 1 - AlignmentToCamera));
+	*/
+}
+
+/**
+ * Search for nearest clumping point for the grass blade at that
+ * UV position, using Voronoi algorithm.
+ * @param UV grass blade position in UV space
+ * @return found clump center as a UV position
+ */
+float2 FindNearestClumpPoint(float2 UV)
+{
+	int GridSize = GrassParams_ClumpGridSize;
+	
+	float2 Cell = floor(UV * GridSize);
+	float2 LocalCoord = frac(UV * GridSize); // [0..1] position of the grass blade inside its cell
+
+	float2 NearestClumpCenter = float2(999, 999);
+	float NearestDistSq = 999999.0f;
+	
+	UNROLL
+	for (int i = -1; i <= 1; i++)
+	{
+		UNROLL
+		for (int j = -1; j <= 1; j++)
+		{
+			float2 Neighbour = float2(i, j);
+			float2 CurrentCell = Cell + Neighbour;
+			
+			float FlatCellIndex = CurrentCell.x + CurrentCell.y * GridSize;
+			FlatCellIndex += 1000.0f; // Avoid negative uint seed
+
+			uint RNGState = PCGHash((uint)FlatCellIndex);
+			
+			float2 Jitter = float2(
+				FloatPCGHashState(RNGState),
+				FloatPCGHashState(RNGState)
+			);
+
+			// Get a clump grid, in [-1..2], of 9 clump areas
+			float2 JitteredNeighbour = Neighbour + Jitter; 
+
+			float2 BladeToNeighbour = JitteredNeighbour - LocalCoord;
+			float BladeToNeighbourDistSq = dot(BladeToNeighbour, BladeToNeighbour);
+
+			float IsCloser = step(BladeToNeighbourDistSq, NearestDistSq);
+
+			NearestDistSq = lerp(NearestDistSq, BladeToNeighbourDistSq, IsCloser);
+			NearestClumpCenter = lerp(NearestClumpCenter, JitteredNeighbour, IsCloser);
+		} 
+	}
+
+	return saturate((Cell + NearestClumpCenter) / float(GridSize));
+}
+
+/**
+ * Sample neighbouring heightmap points to derive normal vector
+ * at the specified location.
+ * @param UV location to get the normal for
+ * @param LocalHeight central height sample 
+ * @returns world-space terrain normal 
+ */
+float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
+{
+	int HeightmapResolution = ComponentSizeQuads + 1;
+	float TexelSize = 1.0f / (float)HeightmapResolution;
+
+	float2 Dxy = LocalHeight - float2(
+		SampleHeightmap(UV + float2(TexelSize, 0)),
+		SampleHeightmap(UV + float2(0, TexelSize))
+	);
+
+	float2 QuadSize = float2(LandscapeLocalToWorld[0][0], LandscapeLocalToWorld[1][1]);
+	
+	float3 LocalNormal = float3(Dxy / QuadSize, 1.0f);
+	
+	return normalize(mul(LocalNormal, (float3x3)LandscapeWorldToLocal));
+}
+
+[numthreads(THREADS_X, THREADS_Y, 1)]
+void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
+{
+	uint Seed = DispatchThreadID.x + DispatchThreadID.y * (uint)InstanceCountPerTileX;
+	
+	FGrassBladeData GrassBlade;
+	GrassBlade.Hash = PCGHash(Seed);
+	
+	float2 UVPosition = float2(
+		DispatchThreadID.x / (float)InstanceCountPerTileX,
+		DispatchThreadID.y / (float)InstanceCountPerTileY
+	);
+	
+	float2 JitteredUV = ApplyJitter(UVPosition, GrassBlade.Hash);
+	
+	float2 ClumpCenterUV = FindNearestClumpPoint(JitteredUV);
+	float2 ToClumpCenter = ClumpCenterUV - JitteredUV;
+
+	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
+	float2 FinalUV = saturate(JitteredUV + ToClumpCenter * RandomClumpStrength);
+
+	float2 HeightmapScale = HeightmapScaleBias.xy;
+	float2 HeightmapBias  = HeightmapScaleBias.zw;
+
+	float LandscapeLocalHeight = SampleHeightmap(FinalUV);
+	
+	GrassBlade.Position = GetAbsoluteWorldPos(FinalUV, LandscapeLocalHeight);
+	GrassBlade.Facing = ComputeFacing(GrassBlade.Position, GrassBlade.Hash, ToClumpCenter);
+	
+	GrassBlade.Height = RandomScaleValue(GrassParams_Height, 0.9f * GrassParams_RandHeight, GrassBlade.Hash);
+	GrassBlade.Width  = RandomScaleValue(GrassParams_Width, 0.8f * GrassParams_RandWidth, GrassBlade.Hash);
+	GrassBlade.Width  = min(GrassBlade.Width, GrassParams_Width);
+	GrassBlade.Tilt	  = RandomScaleValue(GrassParams_Tilt, 0.25f * GrassParams_RandTilt, GrassBlade.Hash);
+	GrassBlade.Bend	  = RandomScaleValue(GrassParams_Bend, 0.5f * GrassParams_RandBend, GrassBlade.Hash);
+
+	GrassBlade.TerrainNormal = ComputeTerrainNormalFromHeightmap(FinalUV, LandscapeLocalHeight);
+	
+	bool IsCulled = TestInstanceCulling(GrassBlade);
+	
+	uint LaneIndex_Wave = WavePrefixCountBits(!IsCulled);
+	uint VisibleBladeCount_Wave = WaveActiveCountBits(!IsCulled);
+
+	// Used to perform compact writing inside the buffer. Allows us
+	// to store all the grass blade data (for a tile) contiguously.
+	uint BufferWriteIndex = 0;
+	if (WaveIsFirstLane())
+	{
+		// Issue one atomic for the entire wave.
+		InterlockedAdd(OutInstanceCounter[TileIndex], VisibleBladeCount_Wave, BufferWriteIndex);
+	}
+
+	// Broadcast of the value calculated at lane 0.
+	BufferWriteIndex = WaveReadLaneFirst(BufferWriteIndex);
+	BufferWriteIndex += LaneIndex_Wave + TileIndex * (InstanceCountPerTileX * InstanceCountPerTileY);
+	
+	if (!IsCulled)
+	{
+		OutInstanceDataBuffer[BufferWriteIndex] = GrassBlade;
+	}
+}
+
+/* COMPUTE SHADER #2: initialize indirect draw args. */
+
+Buffer<uint> InInstanceCounter;
+
+RWBuffer<uint> OutIndirectDrawArgsBuffer;
+
+[numthreads(1, 1, 1)]
+void CSInitIndirectDrawArgs()
+{
+	OutIndirectDrawArgsBuffer[0] = GrassBladeVertexCount; // IndexCountPerInstance
+	OutIndirectDrawArgsBuffer[1] = InInstanceCounter[TileIndex]; // InstanceCount
+	OutIndirectDrawArgsBuffer[2] = 0; // StartIndexLocation
+	OutIndirectDrawArgsBuffer[3] = 0; // BaseVertexLocation
+	OutIndirectDrawArgsBuffer[4] = 0; // StartInstanceLocation
+}

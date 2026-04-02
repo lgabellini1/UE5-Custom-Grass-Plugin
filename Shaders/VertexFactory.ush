@@ -1,0 +1,230 @@
+﻿#include "/Engine/Private/VertexFactoryCommon.ush"
+#include "VertexShader.ush"
+
+struct FVertexFactoryInput
+{
+	uint VertexId : SV_VertexID;
+	uint InstanceId : SV_InstanceID;
+};
+
+struct FVertexFactoryIntermediates
+{
+	float2 LocalUV;
+	float3 WorldPos;
+	half3x3 TangentToWorld;
+	half TangentToWorldSign;
+	FSceneDataIntermediates SceneData;
+	
+	float4 DebugValue;
+};
+
+FPrimitiveSceneData GetPrimitiveData(FVertexFactoryIntermediates Intermediates)
+{
+	return Intermediates.SceneData.Primitive;
+}
+
+struct FVertexFactoryInterpolantsVSToPS
+{
+#if NUM_TEX_COORD_INTERPOLATORS
+	float4 TexCoords[(NUM_TEX_COORD_INTERPOLATORS + 1) / 2] : TEXCOORD0;
+#endif
+
+	TANGENTTOWORLD_INTERPOLATOR_BLOCK
+
+	float4 DebugValue : TEXCOORD12;
+}; 
+
+half3x3 CalcTangentToWorld(float3 WorldNormal)
+{
+	half3x3 Result;
+	
+	// Handles the edge case where WorldNormal is parallel to world up (a perfectly vertical blade),
+	// which would make cross(up, normal) degenerate.
+	float3 WorldUp = abs(WorldNormal.z) < 0.99f ? float3(0, 0, 1) : float3(1, 0, 0);
+
+	float3 Tangent = normalize(cross(WorldUp, WorldNormal));
+	float3 Bitangent = cross(WorldNormal, Tangent);
+
+	Result[0] = Tangent;
+	Result[1] = Bitangent;
+	Result[2] = WorldNormal;
+
+	return Result;
+}
+
+FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput Input)
+{
+	FVertexFactoryIntermediates Intermediates = (FVertexFactoryIntermediates)0;
+
+	float3 WorldNormal;
+
+	VSMain(Input.VertexId, Input.InstanceId,
+		Intermediates.LocalUV, Intermediates.WorldPos, WorldNormal, Intermediates.DebugValue);
+
+	Intermediates.TangentToWorld = CalcTangentToWorld(WorldNormal);
+	Intermediates.TangentToWorldSign = 1.0f;
+
+	Intermediates.SceneData = VF_GPUSCENE_GET_INTERMEDIATES(Input);
+
+	return Intermediates;
+}
+
+FMaterialVertexParameters GetMaterialVertexParameters(
+	FVertexFactoryInput Input, 
+	FVertexFactoryIntermediates Intermediates, 
+	float3 WorldPosition, 
+	half3x3 TangentToLocal,
+	bool bIsPreviousFrame = false)
+{
+	FMaterialVertexParameters Result = MakeInitializedMaterialVertexParameters();
+
+	Result.SceneData = Intermediates.SceneData;
+
+	Result.WorldPosition = WorldPosition;
+
+	Result.TangentToWorld = Intermediates.TangentToWorld;
+
+#if NUM_MATERIAL_TEXCOORDS_VERTEX
+	UNROLL
+	for (int CoordinateIndex = 0; CoordinateIndex < NUM_MATERIAL_TEXCOORDS_VERTEX; CoordinateIndex++)
+	{
+		Result.TexCoords[CoordinateIndex] = Intermediates.LocalUV;
+	}
+#endif
+
+	return Result;
+}
+
+uint GetPrimitiveId(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return 0;
+}
+
+uint VertexFactoryGetPrimitiveId(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return GetPrimitiveId(Interpolants);
+}
+
+float4 VertexFactoryGetWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	float3 TranslatedWorldPosition = Intermediates.WorldPos + LWCToFloat(ResolvedView.PreViewTranslation);
+	return float4(TranslatedWorldPosition, 1.f);
+}
+
+float4 VertexFactoryGetRasterizedWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, float4 InWorldPosition)
+{
+	return InWorldPosition;
+}
+
+float3 VertexFactoryGetPositionForVertexLighting(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, float3 TranslatedWorldPosition)
+{
+	return TranslatedWorldPosition;
+}
+
+float4 VertexFactoryGetPreviousWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return VertexFactoryGetWorldPosition(Input, Intermediates); 
+}
+
+float3 VertexFactoryGetWorldNormal(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return Intermediates.TangentToWorld[2];
+}
+
+half3x3 VertexFactoryGetTangentToLocal(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return half3x3(1, 0, 0, 0, 1, 0, 0, 0, 1);
+}
+
+float4 VertexFactoryGetTranslatedPrimitiveVolumeBounds(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	FPrimitiveSceneData PrimitiveData = GetPrimitiveData(GetPrimitiveId(Interpolants));
+	return float4(DFFastToTranslatedWorld(PrimitiveData.ObjectWorldPosition, ResolvedView.PreViewTranslation), PrimitiveData.ObjectRadius);
+}
+
+#if NUM_TEX_COORD_INTERPOLATORS // UV setter-getter
+void SetUV(inout FVertexFactoryInterpolantsVSToPS Interpolants, uint UVIndex, float2 InValue)
+{
+	FLATTEN
+	if (UVIndex % 2)
+	{
+		Interpolants.TexCoords[UVIndex / 2].zw = InValue;
+	}
+	else
+	{
+		Interpolants.TexCoords[UVIndex / 2].xy = InValue;
+	}
+}
+
+float2 GetUV(FVertexFactoryInterpolantsVSToPS Interpolants, uint UVIndex)
+{
+	float4 UVVector = Interpolants.TexCoords[UVIndex / 2];
+	return UVIndex % 2 ? UVVector.zw : UVVector.xy;
+}
+#endif
+
+float4 GetTangentToWorld2(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return Interpolants.TangentToWorld2;
+}
+
+float4 GetTangentToWorld0(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return Interpolants.TangentToWorld0;
+}
+
+void SetTangents(inout FVertexFactoryInterpolantsVSToPS Interpolants, float3 InTangentToWorld0, float3 InTangentToWorld2, float InTangentToWorldSign)
+{
+	Interpolants.TangentToWorld0 = float4(InTangentToWorld0,0);
+	Interpolants.TangentToWorld2 = float4(InTangentToWorld2, InTangentToWorldSign);
+} 
+
+FVertexFactoryInterpolantsVSToPS VertexFactoryGetInterpolantsVSToPS(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, FMaterialVertexParameters VertexParameters)
+{
+	FVertexFactoryInterpolantsVSToPS Interpolants = (FVertexFactoryInterpolantsVSToPS)0;
+
+#if NUM_TEX_COORD_INTERPOLATORS
+	float2 CustomizedUVs[NUM_TEX_COORD_INTERPOLATORS];
+	GetMaterialCustomizedUVs(VertexParameters, CustomizedUVs);
+	GetCustomInterpolators(VertexParameters, CustomizedUVs);
+
+	UNROLL
+	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++)
+	{
+		SetUV(Interpolants, CoordinateIndex, CustomizedUVs[CoordinateIndex]);
+	}
+#endif
+	
+	SetTangents(Interpolants, Intermediates.TangentToWorld[0], Intermediates.TangentToWorld[2], Intermediates.TangentToWorldSign);
+
+	Interpolants.DebugValue = Intermediates.DebugValue;
+	
+	return Interpolants;
+}
+
+FMaterialPixelParameters GetMaterialPixelParameters(FVertexFactoryInterpolantsVSToPS Interpolants, float4 SvPosition)
+{
+	FMaterialPixelParameters Result = MakeInitializedMaterialPixelParameters();
+
+	Result.VertexColor = Interpolants.DebugValue;
+
+	half3 TangentToWorld0 = GetTangentToWorld0(Interpolants).xyz;
+	half4 TangentToWorld2 = GetTangentToWorld2(Interpolants);
+	Result.UnMirrored = TangentToWorld2.w;
+
+#if NUM_TEX_COORD_INTERPOLATORS
+	UNROLL
+	for (uint CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++)
+	{
+		Result.TexCoords[CoordinateIndex] = GetUV(Interpolants, CoordinateIndex);
+	}
+#endif
+	Result.TangentToWorld = AssembleTangentToWorld(TangentToWorld0, TangentToWorld2);
+
+	Result.TwoSidedSign = 1.0f;
+	Result.PrimitiveId = GetPrimitiveId(Interpolants);
+
+	return Result;
+}
+
+#include "/Engine/Private/VertexFactoryDefaultInterface.ush"

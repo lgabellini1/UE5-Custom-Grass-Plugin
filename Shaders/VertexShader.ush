@@ -1,0 +1,171 @@
+﻿#include "Shared.ush"
+
+// On its own file to keep the actual VS implementation separate from
+// factory boilerplate code. 
+
+StructuredBuffer<FGrassBladeData> InInstanceDataBuffer;
+int TileOffset;
+
+/* Wind */
+
+Texture2D<float> NoiseTexture;
+SamplerState NoiseSampler;
+float2 WindDirection;
+float WindStrength;
+float Time;
+
+/* Others */
+
+float NormalRoundnessStrength;
+
+float ViewSpaceCorrection;
+
+float ShortHeightThreshold;
+
+
+float3 ComputeWindEffect(float3 Position, float RelativeHeight)
+{
+	/* Todo: wind implementation */
+	return Position;
+}
+
+/**
+ * Shifts vertex position in view-space to fake thickness when viewed perpendicularly.
+ * @param Position vertex world-space position
+ * @return new world-space position with view-space shift
+ */
+float3 ComputeViewSpaceShift(float3 Position, float IsTip, float OffsetSign, float3x3 LocalToWorld)
+{
+	float3 BladeWorldNormal = normalize(mul(float3(0, 1, 0), LocalToWorld));
+	float3 ToCamera = normalize(Position - DFHackToFloat(ResolvedView.WorldCameraOrigin));
+	
+	float3 ViewPos = mul(Position, (float3x3)ResolvedView.TranslatedWorldToView);
+	float3 ViewNormal = normalize(mul(BladeWorldNormal, (float3x3)ResolvedView.TranslatedWorldToView));
+
+	float NormalAlignmentToCamera = abs(dot(BladeWorldNormal, ToCamera));
+	float IsEdgeOn = 1 - smoothstep(0.2f, 0.5f, NormalAlignmentToCamera);
+
+	float ViewFacingSign = sign(dot(ViewNormal, float3(0, 0, 1)));
+	ViewPos.x += IsTip ? 0.0f : ViewSpaceCorrection * OffsetSign * ViewFacingSign * IsEdgeOn;
+
+	return mul(float4(ViewPos, 1.0f), ResolvedView.ViewToTranslatedWorld).xyz;
+}
+
+/**
+ * Tilt outward the basic surface normals; grants fuller appearance to the
+ * grass leafs.
+ */
+float3 GetRoundedNormals(float3 SurfaceNormal, float IsLeft, float RelativeHeight)
+{
+	float OffsetSign = IsLeft * 2.f - 1.f;
+	return normalize(SurfaceNormal - float3(NormalRoundnessStrength * OffsetSign * (1 - RelativeHeight), 0.f, 0.f));
+}
+
+/**
+ * Construct leaf bend direction as the outward vector perpendicular
+ * to the line between base and tip.
+ */
+float3 ConstructBendDir(float3 Base, float3 Tip)
+{
+	float3 WorldUp = float3(0, 0, 1);
+	float3 BaseToTip = normalize(Tip - Base);
+	float3 SideDir = cross(BaseToTip, WorldUp);
+
+	return normalize(cross(SideDir, BaseToTip));
+}
+
+void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCount, int SplitSegment, bool IsMainBlade,
+	inout float2 OutLocalUV, inout float3 OutWorldPos, inout float3 OutWorldNormal, out float4 OutDebugValue)
+{
+	OutDebugValue = (float4)0;
+	
+	int LocalSegmentCount = IsMainBlade ? SegmentCount - SplitSegment : SplitSegment;
+	
+	// Each vertex lies on a range of [0..1] along the leaf, where 1 means it's on the tip.
+	// Naively, these values are evenly distributed (on couples).
+	float RelativeHeight = saturate(floor(VertexId / 2) / (float)LocalSegmentCount);
+
+	float IsLeft = 1 - fmod(VertexId, 2.0f);
+
+	float3 Base = float3(GrassBlade.Width / 2, 0.f, 0.f);
+
+	bool IsTip = IsMainBlade ? (VertexId == GrassBladeVertexCount - 1) : (VertexId == 0);
+	
+	float HeightScaleFactor = (float)LocalSegmentCount / (float)SegmentCount;
+	float BladeHeight = GrassBlade.Height * HeightScaleFactor;
+	
+	float3 Tip = Base + float3(0.f, GrassBlade.Tilt, BladeHeight);
+
+	float U = IsTip ? 0.5f : (1.f - IsLeft);
+	float V = RelativeHeight;
+	OutLocalUV = float2(U, V);
+
+	float3 BendDir = ConstructBendDir(Base, Tip);
+
+	float3 MidPoint = lerp(Base, Tip, 0.5f) + BendDir * GrassBlade.Bend;
+
+	// Bézier curve control points
+	float3 p0 = Base;
+	float3 p3 = Tip;
+	float3 p1 = p0 + (MidPoint - p0) * (2.f / 3.f);
+	float3 p2 = p3 + (MidPoint - p3) * (2.f / 3.f);
+
+	float OffsetSign = IsLeft * 2.f - 1.f;
+
+	float3 LocalPos = CubicBezier(p0, p1, p2, p3, RelativeHeight);
+	LocalPos += float3(GrassBlade.Width / 2.f, 0.f, 0.f) * OffsetSign
+		* (1.f - RelativeHeight); // Restrict along height
+	
+	float3 SurfaceNormal = normalize(
+		cross(CubicBezierDerivative(p0, p1, p2, p3, RelativeHeight), float3(1.f, 0.f, 0.f))
+	);
+	
+	float3 RoundedNormals = GetRoundedNormals(SurfaceNormal, IsLeft, RelativeHeight);
+	
+	float Angle = IsMainBlade ? 0 : (HashUIntToFloat(GrassBlade.Hash ^ 0x9e3779b9u) - 0.5f) * (PI / 4.f) + PI;
+
+	float2 BladeFacing = IsMainBlade ? GrassBlade.Facing : Rotate2DVec(GrassBlade.Facing, Angle);
+	
+	float3 OrthoNormal = float3(-BladeFacing.y, BladeFacing.x, 0.f);
+
+	float3 Up = GrassBlade.TerrainNormal;
+	float3 Right = ProjectOntoPlane(OrthoNormal, Up);
+	float3 Forward = ProjectOntoPlane(float3(BladeFacing, 0.f), Up);
+
+	float3x3 LocalToWorld = float3x3(Right, Forward, Up);
+
+	float3 WorldPos = GrassBlade.Position + mul(LocalPos, LocalToWorld);
+	WorldPos = ComputeViewSpaceShift(WorldPos, IsTip, OffsetSign, LocalToWorld);
+
+	OutWorldPos	   = WorldPos;
+	OutWorldNormal = normalize(mul(RoundedNormals, LocalToWorld));
+}
+
+void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
+	inout float2 OutLocalUV, inout float3 OutWorldPos, inout float3 OutWorldNormal, inout float4 OutDebugValue)
+{
+	FGrassBladeData GrassBlade = InInstanceDataBuffer[InstanceId + TileOffset];
+	
+	const int SegmentCount = (GrassBladeVertexCount - 1) / 2;
+	
+	if (GrassBlade.Height < ShortHeightThreshold)
+	{
+		int SplitSegment = floor(SegmentCount / 2);
+		int SplitVertexId = SplitSegment * 2;
+
+		bool IsMainBlade = VertexId >= SplitVertexId;
+
+		// Reverse order for secondary blade so that v0 == tip
+		uint LocalVertexId = IsMainBlade ? VertexId - SplitVertexId : SplitVertexId - VertexId;
+		
+		ComputeBladeVertex(GrassBlade, LocalVertexId, SegmentCount, SplitSegment, IsMainBlade,
+			OutLocalUV, OutWorldPos, OutWorldNormal, OutDebugValue);
+	}
+	else
+	{
+		ComputeBladeVertex(GrassBlade, VertexId, SegmentCount, 0, true,
+			OutLocalUV, OutWorldPos, OutWorldNormal, OutDebugValue);
+	}
+
+	OutDebugValue = float4(OutWorldNormal, 1.f);
+}
