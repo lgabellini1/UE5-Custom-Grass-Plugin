@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "CustomGrassWorldSubsystem.h"
 
-struct FWindParams;
+// struct FWindParams;
 class UCustomGrassPrimitiveComponent;
 class FCustomGrassRenderSystem;
 class FCustomGrassVertexFactory;
@@ -19,28 +19,19 @@ struct FProxyLandscapeData
 	FTextureRHIRef HeightmapTexture;
 	FSamplerStateRHIRef HeightmapSampler;
 	FVector4f HeightmapScaleBias;
+	
 	int32 ComponentSizeQuads;
+	
 	FIntPoint SectionBase;
+
+	FVector3f BoundingBox;
+	
 	FMatrix44f LocalToWorld;
-	FMatrix44f WorldToLocal;
 };
 
+FVector3f GetTileCenter(const FProxyLandscapeData& LandscapeData);
 
-/**
- * Static references to resources needed by proxy for
- * rendering. The memory these refs point to is expected to be
- * completely handled by the render system.
- */
-struct FRenderingResourceHandles
-{
-	FShaderResourceViewRHIRef InstanceData;
-	FBufferRHIRef IndirectDrawArgs;
-	int32 TileOffset;
-	FWindParams WindParams;
-	float ViewSpaceCorrection;
-	float NormalRoundnessStrength;
-	float ShortHeightThreshold;
-};	
+FVector3f GetTileExtent(const FProxyLandscapeData& LandscapeData);
 
 
 class FCustomGrassSceneProxy final : public FPrimitiveSceneProxy
@@ -69,18 +60,14 @@ protected:
 	
 	FCustomGrassRenderSystem* RenderSystem;
 
-	TSharedPtr<FRenderingResourceHandles> ResourceHandles;
+	TSharedPtr<FRenderingResourceHandles, ESPMode::ThreadSafe> ResourceHandles;
 
-	/** Render-thread copy of useful landscape data. */
+	/** Render-thread copy of landscape data useful to shaders. */
 	FProxyLandscapeData LandscapeData;
 
 	
-	// VF and material proxy roughly represent respectively the vertex and
-	// pixel shader for this mesh.
+	FCustomGrassVertexFactory* VertexFactory;
 	
-	FCustomGrassVertexFactory* VertexFactory = nullptr;
-	
-	FMaterialRenderProxy* MaterialProxy = nullptr;
- 
+	FMaterialRenderProxy* MaterialProxy;
 	FMaterialRelevance MaterialRelevance;
 };

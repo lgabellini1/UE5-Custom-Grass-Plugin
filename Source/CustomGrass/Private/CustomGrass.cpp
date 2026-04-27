@@ -25,24 +25,25 @@ TAutoConsoleVariable<int32> CVarCustomGrassEnabled(
 );
 
 TAutoConsoleVariable<int32> CVarFrozenViewFrustum(
-	TEXT("r.CustomGrassFreezeView.Enable"),
+	TEXT("r.CustomGrass.FreezeViewFrustum"),
 	0,
 	TEXT("Freeze the view frustum for culling visualization"),
 	ECVF_RenderThreadSafe
 );
 
 FOnGrassDataAssetLoad OnGrassDataAssetLoadDelegate;
+
 FOnCVarGrassEnableChange OnCVarGrassEnableChangeDelegate;
 
-static void BroadcastCVarChange_GameThread()
+static void BroadcastCVarGrassEnableChange_GameThread()
 {
-	bool bNewValue = CVarCustomGrassEnabled.GetValueOnGameThread() == 1;
-
-	OnCVarGrassEnableChangeDelegate.Broadcast(bNewValue);
+	OnCVarGrassEnableChangeDelegate.Broadcast(
+		CVarCustomGrassEnabled.GetValueOnGameThread() == 1
+	);
 }
 
 static FAutoConsoleVariableSink CVarCustomGrassEnabledSink(
-	FConsoleCommandDelegate::CreateStatic(&BroadcastCVarChange_GameThread)
+	FConsoleCommandDelegate::CreateStatic(&BroadcastCVarGrassEnableChange_GameThread)
 );
 
 #undef LOCTEXT_NAMESPACE

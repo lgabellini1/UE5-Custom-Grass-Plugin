@@ -14,16 +14,16 @@ class UCustomGrassPrimitiveComponent : public UPrimitiveComponent
 
 public:
 	explicit UCustomGrassPrimitiveComponent(const FObjectInitializer& ObjectInitializer);
+
+	UPROPERTY()
+	TObjectPtr<const ULandscapeComponent> LandscapeTile;
 	
-	ULandscapeComponent* GetAssociatedTile() const { return LandscapeTile.Get(); }
+	TObjectPtr<const ULandscapeComponent> GetLandscapeTile() const { return LandscapeTile; }
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
 
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials = false) const override;
-
-	UPROPERTY()
-	TObjectPtr<ULandscapeComponent> LandscapeTile;
 
 protected:
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;

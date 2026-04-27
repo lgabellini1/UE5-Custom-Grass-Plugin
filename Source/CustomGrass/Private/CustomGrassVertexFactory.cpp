@@ -2,9 +2,13 @@
 
 #include "CustomGrassVertexFactory.h"
 
+#include <devicetopology.h>
+
 #include "CustomGrassSceneProxy.h"
+#include "LandscapeRender.h"
 #include "MeshDrawShaderBindings.h"
 #include "MeshMaterialShader.h"
+#include "SkeletonTreeBuilder.h"
 
 IMPLEMENT_VERTEX_FACTORY_TYPE(FCustomGrassVertexFactory, "/CustomShaders/VertexFactory.ush", FCustomGrassVertexFactory::Flags);
 
@@ -16,17 +20,26 @@ IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(FCustomGrassVertexFactory, SF_Pixel, FCu
 FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
 	: FVertexFactory(InFeatureLevel)
 {
-	IndexBuffer = new FCustomGrassIndexBuffer();
+	for (int32 LOD = 0; LOD < GNumLODs; LOD++)
+	{
+		IndexBuffers[LOD] = new FCustomGrassIndexBuffer(static_cast<EGrassLOD>(LOD));
+	}
 }
 
 FCustomGrassVertexFactory::~FCustomGrassVertexFactory()
 {
-	delete IndexBuffer;
+	for (const FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
+	{
+		delete IndexBuffer;
+	}
 }
 
 void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 {
-	IndexBuffer->InitResource(RHICmdList);
+	for (FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
+	{
+		IndexBuffer->InitResource(RHICmdList);
+	}
 
 	FVertexStream NullVertexStream;
 	NullVertexStream.VertexBuffer = nullptr;
@@ -43,7 +56,7 @@ void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 
 void FCustomGrassVertexFactory::ReleaseRHI()
 {
-	if (IndexBuffer)
+	for (FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
 	{
 		IndexBuffer->ReleaseResource();
 	}
@@ -64,7 +77,10 @@ bool FCustomGrassVertexFactory::ShouldCompilePermutation(const FVertexFactorySha
 
 #if WITH_EDITOR
 	if (bCompile)
-		UE_LOG(LogTemp, Display, TEXT("CustomGrass: Compiling permutation for %s"), Parameters.ShaderType->GetName());
+	{
+		UE_LOG(LogTemp, Display, TEXT("CustomGrass: Compiling permutation for %s"),
+			Parameters.ShaderType->GetName());
+	}
 #endif
 	
 	return bCompile;
@@ -74,6 +90,7 @@ void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& Para
 {
 	InstanceDataBuffer.Bind(ParameterMap, TEXT("InInstanceDataBuffer"));
 	TileOffset.Bind(ParameterMap, TEXT("TileOffset"));
+	GrassBladeVertexCount.Bind(ParameterMap, TEXT("GrassBladeVertexCount"));
 	
 	NoiseTexture.Bind(ParameterMap, TEXT("NoiseTexture"));
 	NoiseSampler.Bind(ParameterMap, TEXT("NoiseSampler"));
@@ -98,25 +115,31 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	FMeshDrawSingleShaderBindings& ShaderBindings,
 	FVertexInputStreamArray& VertexStreams) const
 {
-	const auto* VSParams = static_cast<const FCustomGrassVertexShaderParams* const>(BatchElement.UserData);
-	const FRenderingResourceHandles& Handles = *VSParams->ResourceHandles;
-
-	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = Handles.IndirectDrawArgs;
-
-	ShaderBindings.Add(InstanceDataBuffer, Handles.InstanceData);
-	ShaderBindings.Add(TileOffset, Handles.TileOffset);
+	auto* BatchUserData = static_cast<const FCustomGrassBatchUserData*>(BatchElement.UserData);
+	const FRenderingResourceHandles* Handles = BatchUserData->ResourceHandles;
+	check(Handles);
 	
-	ShaderBindings.Add(NoiseTexture, Handles.WindParams.NoiseTexture);
-	ShaderBindings.Add(NoiseSampler, Handles.WindParams.NoiseSampler);
-	ShaderBindings.Add(WindDirection, Handles.WindParams.Direction);
-	ShaderBindings.Add(WindStrength, Handles.WindParams.Strength);
-	ShaderBindings.Add(Time, Handles.WindParams.Time);
+	if (Handles->TileOffset == INDEX_NONE)
+		return;
+	
+	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = Handles->IndirectDrawArgs;
+	
+	ShaderBindings.Add(InstanceDataBuffer, Handles->InstanceData);
+	ShaderBindings.Add(TileOffset, Handles->TileOffset);
+	ShaderBindings.Add(GrassBladeVertexCount, GetGrassBladeVertexCount(BatchUserData->LOD));
 
-	ShaderBindings.Add(ViewSpaceCorrection, Handles.ViewSpaceCorrection);
+	
+	/*
+	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);
+	ShaderBindings.Add(NoiseSampler, ResourceHandles->WindParams.NoiseSampler);
+	ShaderBindings.Add(WindDirection, ResourceHandles->WindParams.Direction);
+	ShaderBindings.Add(WindStrength, ResourceHandles->WindParams.Strength);
+	ShaderBindings.Add(Time, ResourceHandles->WindParams.Time);
 
-	ShaderBindings.Add(NormalRoundnessStrength, Handles.NormalRoundnessStrength);
+	ShaderBindings.Add(ViewSpaceCorrection, ResourceHandles->ViewSpaceCorrection);
 
-	ShaderBindings.Add(ShortHeightThreshold, Handles.ShortHeightThreshold);
+	ShaderBindings.Add(NormalRoundnessStrength, ResourceHandles->NormalRoundnessStrength);
 
-	UE_LOG(LogTemp, Display, TEXT("GetElementShaderBindings: TileOffset=%d"), Handles.TileOffset);
+	ShaderBindings.Add(ShortHeightThreshold, ResourceHandles->ShortHeightThreshold);
+	*/
 }

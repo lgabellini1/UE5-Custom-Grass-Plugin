@@ -12,6 +12,10 @@
 class FCustomGrassIndexBuffer : public FIndexBuffer
 {
 public:
+	explicit FCustomGrassIndexBuffer(EGrassLOD LOD)
+	: LOD(LOD), NumIndices(GetGrassBladeVertexCount(LOD))
+	{}
+	
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
 	{
 		// Taken from RawIndexBuffer.cpp
@@ -32,11 +36,13 @@ public:
 		IndexBufferRHI = RHICmdList.CreateBuffer(BufferDesc);
 	}
 
+	const EGrassLOD LOD;
+
 protected:
-	int32 NumIndices = GGrassBladeVertexCount;
+	int32 NumIndices;
 };
 
-struct FCustomGrassVertexShaderParams : public FOneFrameResource
+struct FCustomGrassBatchUserData : public FOneFrameResource
 {
 	/*
 	FShaderResourceViewRHIRef InstanceDataBuffer;
@@ -46,7 +52,8 @@ struct FCustomGrassVertexShaderParams : public FOneFrameResource
 	float NormalRoundnessStrength;
 	float ShortHeightThreshold;
 	*/
-	FRenderingResourceHandles* ResourceHandles;
+	const FRenderingResourceHandles* ResourceHandles;
+	EGrassLOD LOD;
 };
 
 
@@ -63,11 +70,14 @@ public:
 	virtual void ReleaseRHI() override;
 	
 	static bool ShouldCompilePermutation(const FVertexFactoryShaderPermutationParameters &Parameters);
-	static void ModifyCompilationEnvironment(const FVertexFactoryShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment ) {}
-	static void ValidateCompiledResult(const FVertexFactoryType* Type, EShaderPlatform Platform, const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
+	
+	static void ModifyCompilationEnvironment(const FVertexFactoryShaderPermutationParameters& Parameters,
+		FShaderCompilerEnvironment& OutEnvironment ) {}
+	static void ValidateCompiledResult(const FVertexFactoryType* Type, EShaderPlatform Platform,
+		const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
 
-	FIndexBuffer const* GetIndexBuffer() const { return IndexBuffer; }
-
+	FIndexBuffer* GetIndexBuffer(EGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)]; }
+	
 	static constexpr EVertexFactoryFlags Flags =
 		EVertexFactoryFlags::UsedWithMaterials	
 //	  | EVertexFactoryFlags::SupportsStaticLighting    
@@ -76,7 +86,7 @@ public:
 	  | EVertexFactoryFlags::SupportsCachingMeshDrawCommands;
 
 protected:
-	FCustomGrassIndexBuffer* IndexBuffer = nullptr;
+	TStaticArray<FCustomGrassIndexBuffer*, GNumLODs> IndexBuffers;
 };
 
 
@@ -99,11 +109,14 @@ public:
 		FVertexInputStreamArray& VertexStreams) const;
 
 protected:
-	/** Instance data buffer produced by the compute shaders. */
 	LAYOUT_FIELD(FShaderResourceParameter, InstanceDataBuffer);
 
 	LAYOUT_FIELD(FShaderParameter, TileOffset);
 
+	LAYOUT_FIELD(FShaderParameter, GrassBladeVertexCount);
+
+	/* Wind parameters */
+	
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseTexture);
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseSampler);
 	LAYOUT_FIELD(FShaderParameter, WindDirection);

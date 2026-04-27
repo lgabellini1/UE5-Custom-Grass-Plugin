@@ -10,7 +10,7 @@
 	uint Hash;
 };
 
-static const int GrassBladeVertexCount = 15;
+int GrassBladeVertexCount;
 
 /* Utilities */
 

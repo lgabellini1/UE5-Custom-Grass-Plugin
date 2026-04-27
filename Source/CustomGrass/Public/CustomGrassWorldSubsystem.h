@@ -13,10 +13,45 @@ struct FProxyLandscapeData;
 class UCustomGrassDataAsset;
 class ULandscapeComponent;
 class UCustomGrassPrimitiveComponent;
+class FCustomGrassSceneProxy;
 
-static constexpr int32 GGrassBladeVertexCount = 15;
+enum class EGrassLOD : uint8
+{
+	LOD0,
+	LOD1,
+	NumLODs
+};
+
+struct FLODSettings
+{
+	int32 VertexCount;
+	float DistanceThreshold;
+};
+
+/* Globals */
+
+constexpr int32 GNumLODs = static_cast<int32>(EGrassLOD::NumLODs);
+
+constexpr auto LOD0Settings = FLODSettings(15, 0.f);
+constexpr auto LOD1Settings = FLODSettings(7, 200.f);
+
+const auto GLODSettingsMap = TMap<EGrassLOD, FLODSettings>({
+	{EGrassLOD::LOD0, LOD0Settings},
+	{EGrassLOD::LOD1, LOD1Settings}}
+);
+
+inline int32 GetGrassBladeVertexCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].VertexCount; }
+
+inline float GetDistanceThreshold(EGrassLOD LOD) { return GLODSettingsMap[LOD].DistanceThreshold; }
 
 static constexpr int32 GIndexedIndirectDrawArgsNum = 5;
+
+/**
+ * A ceil on the number of rendered tiles. This lets us avoid unexpected memory
+ * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
+ */
+static constexpr int32 MaxRenderedTiles = 2;
+
 
 /** Matches the homonymous struct in shader code. */
 struct FGrassBladeData
@@ -31,7 +66,7 @@ struct FGrassBladeData
 	uint32 Hash;
 };
 
-/** Artist controlled grass parameters. */
+/** Artist-controlled grass parameters. */
 BEGIN_SHADER_PARAMETER_STRUCT(FGrassParams,)
 	SHADER_PARAMETER(float, Height)
 	SHADER_PARAMETER(float, RandHeight)
@@ -48,6 +83,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FGrassParams,)
 	SHADER_PARAMETER(int, ClumpGridSize)
 END_SHADER_PARAMETER_STRUCT()
 
+/* Compute shaders */
 
 class FInstanceGrassBladeCS : public FGlobalShader
 {
@@ -65,7 +101,6 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER(int32, SectionBaseX)
 		SHADER_PARAMETER(int32, SectionBaseY)
 		SHADER_PARAMETER(FMatrix44f, LandscapeLocalToWorld)
-		SHADER_PARAMETER(FMatrix44f, LandscapeWorldToLocal)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float>, HeightmapTexture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, HeightmapSampler)
 		SHADER_PARAMETER_STRUCT(FGrassParams, GrassParams)
@@ -101,6 +136,7 @@ class FInitIndirectDrawArgsCS : public FGlobalShader
 		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, InInstanceCounter)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndirectDrawArgsBuffer)
 		SHADER_PARAMETER(int, TileIndex)
+		SHADER_PARAMETER(int, GrassBladeVertexCount)
 	END_SHADER_PARAMETER_STRUCT()
 	
 	DECLARE_EXPORTED_GLOBAL_SHADER(FInitIndirectDrawArgsCS, );
@@ -124,6 +160,27 @@ struct FWindParams
 	float Time;
 };
 
+/**
+ * Static references to resources needed by proxy for
+ * rendering. The memory these refs point to is expected to be
+ * completely handled by the render system.
+ */
+struct FRenderingResourceHandles
+{
+	FShaderResourceViewRHIRef InstanceData;
+	FBufferRHIRef IndirectDrawArgs;
+	int32 TileOffset;
+
+	/*
+	FWindParams WindParams;
+	
+	float ViewSpaceCorrection;
+	float NormalRoundnessStrength;
+	float ShortHeightThreshold;
+	*/
+};
+
+
 class FCustomGrassRenderSystem
 {
 	friend class UCustomGrassWorldSubsystem;
@@ -134,33 +191,29 @@ class FCustomGrassRenderSystem
 	struct FWorkDesc
 	{
 		const FSceneView* View;
-		float CameraDistanceSq;
+		float CameraDistanceSqr;
 		const FProxyLandscapeData* LandscapeData;
-
-		TSharedRef<FRenderingResourceHandles> ResourceHandles;
+		const TSharedRef<FRenderingResourceHandles> ResourceHandles;
+		EGrassLOD LOD;
 	};
 
 	/** RT-copy of grass parameters from the data asset. */
 	struct FDataAssetProxy
 	{
-		float Height;
-		float RandHeight;
-		float Width;
-		float RandWidth;
-		float Tilt;
-		float RandTilt;
-		float Bend;
-		float RandBend;
+		template<class T = float>
+		struct TRandomValue { T Val; float Random; };
 		
-		float ClumpStrength;
-		float RandClumpStrength;
+		TRandomValue<> Height;
+		TRandomValue<> Width;
+		TRandomValue<> Tilt;
+		TRandomValue<> Bend;
+		
+		TRandomValue<> ClumpStrength;
 		int ClumpGridSize;
 		EClumpFacingType ClumpFacingType;
 		float ClumpFacingStrength;
 		
 		float ShortHeightThreshold;
-		
-		FWindParams WindParams;
 		
 		float ViewSpaceCorrection;
 		
@@ -168,28 +221,10 @@ class FCustomGrassRenderSystem
 		
 		float MaxRenderDistance;
 
-		FDataAssetProxy() = default;
+		FWindParams WindParams;
 
-		explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset)
-			: Height(DataAsset->Height), RandHeight(DataAsset->RandomizeHeight),
-			Width(DataAsset->Width), RandWidth(DataAsset->RandomizeWidth),
-			Tilt(DataAsset->Tilt), RandTilt(DataAsset->RandomizeTilt),
-			Bend(DataAsset->Bend), RandBend(DataAsset->RandomizeBend),
-			ClumpStrength(DataAsset->ClumpStrength), RandClumpStrength(DataAsset->RandomizeClumpStrength),
-			ClumpGridSize(DataAsset->ClumpGridSize), ClumpFacingType(DataAsset->ClumpFacingType),
-			ClumpFacingStrength(DataAsset->ClumpFacingStrength), ShortHeightThreshold(DataAsset->ShortHeightThreshold),
-			WindParams(
-				DataAsset->NoiseTexture
-					? DataAsset->NoiseTexture->GetResource()->GetTextureRHI()
-					: GBlackTexture->GetTextureRHI(),
-				TStaticSamplerState<SF_Point>::GetRHI(),
-				DataAsset->WindDirection.GetSafeNormal(),
-				DataAsset->WindStrength,
-				0.f),
-			ViewSpaceCorrection(DataAsset->ViewSpaceCorrection),
-			NormalRoundnessStrength(DataAsset->NormalRoundnessStrength),
-			MaxRenderDistance(DataAsset->MaxRenderDistance)
-		{}
+		FDataAssetProxy() = default;
+		explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset);
 	};
 
 public:
@@ -203,32 +238,37 @@ public:
 	/** Called by renderer after rendering frame: cleanup of rendering resources. */ 
 	void EndFrame(FRDGBuilder& GraphBuilder);
 
-	void AddRenderingWork(const FSceneView* View, float CameraDistanceSq,
-		const FProxyLandscapeData* LandscapeData, const TSharedRef<FRenderingResourceHandles>& ResourceHandles);
+	/**
+	 * Called by proxies to register themselves for rendering work.
+	 */ 
+	bool AddRenderingWork(const FSceneView* View, float CameraDistanceSqr,
+		const FProxyLandscapeData* LandscapeData,
+		const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
+		const FCustomGrassSceneProxy* Proxy,
+		EGrassLOD LOD);
 
 	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
 
-
-	/**
-	 * A ceil on the number of rendered tiles. This lets us avoid unexpected memory
-	 * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
-	 */
-	static constexpr int32 MaxRenderedTiles = 8;
-
-	static inline const FIntPoint InstanceCountPerTile = FIntPoint(512, 512);	
+	static inline const FIntPoint InstanceCountPerTile = FIntPoint(512, 512);
 
 protected:
 
-	bool bIsActive;
+	bool bIsActive = false;
+
+	bool bResourcesInitialized = false;
+	
+	FCriticalSection AddRenderingWorkCS;
 	
 	/** Scheduled rendering work for the current frame. */
 	TArray<FWorkDesc> QueuedWork;
 
-	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers);
+	TSet<const FCustomGrassSceneProxy*> RegisteredProxies;
+
+	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
 
 	void InitPerFrameResources(FRDGBuilder& GraphBuilder, FVolatileBuffers& OutBuffers) const;
 	
-
+	static float CalcTileSortingScore(const FWorkDesc& Work);
 	
 	/**
 	 * Each of these buffers is made up of several "partitions", one
@@ -250,7 +290,9 @@ protected:
 	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(sizeof(uint32),
 		GIndexedIndirectDrawArgsNum);
 	
-
+	/**
+	 * Representation of the data asset as cached on the render-thread.
+	 */
 	FDataAssetProxy DataAssetProxy;
 
 
@@ -276,10 +318,6 @@ protected:
 		const FVolatileBuffers& InBuffers,
 		int32 TileIndex
 	) const;
-
-	
-	/** Small utility for constructing the view frustum planes array. */
-	static TStaticArray<FVector4f, 4> BuildFrustumPlanes_RenderThread(const FSceneView* const View);
 };
 
 
@@ -302,22 +340,14 @@ public:
 	/** Editor-only */
 	virtual void Tick(float DeltaTime) override;
 
-	virtual bool IsTickable() const override
-	{
-	#if WITH_EDITOR
-		return true;
-	#else
-		return false;
-	#endif
-	}
+	virtual bool IsTickable() const override { return WITH_EDITOR; }
 
 	virtual TStatId GetStatId() const override { return TStatId(); }
 	
-	FCustomGrassRenderSystem* GetRenderSystem_GameThread() const;
+	FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem.Get(); }
 
 protected:
 	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
-
 	
 	UPROPERTY()
 	TArray<TObjectPtr<ULandscapeComponent>> LandscapeTiles;
@@ -332,9 +362,9 @@ protected:
 
 	/** Allows changing grass aspect dynamically. */
 	UPROPERTY()
-	UCustomGrassDataAsset* GrassDataAsset;
+	const UCustomGrassDataAsset* GrassDataAsset;
 
-	// Delegates: respond to state change -> RecomputeRunningState()
+	// Delegates: respond to state change -> call RecomputeRunningState()
 	
 	void OnCVarChanged(bool bNewValue);
 	void OnDataAssetChanged();
@@ -345,3 +375,34 @@ protected:
 
 	bool bIsActive = false;
 };
+
+/*
+class FCustomGrassViewExtension : public FSceneViewExtensionBase
+{
+public:
+	FCustomGrassViewExtension(const FAutoRegister& AutoRegister, FCustomGrassRenderSystem* InRenderSystem)
+		: FSceneViewExtensionBase(AutoRegister), RenderSystem(InRenderSystem) {}	
+
+	virtual void PreRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override
+	{
+		RenderSystem->InitFrame(GraphBuilder);
+	}
+
+	virtual void PostRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override
+	{
+		RenderSystem->EndFrame(GraphBuilder);
+	}
+
+	virtual void PreRenderBasePass_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated) override
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PreBasePass"));
+	}
+	
+	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override {}
+	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override {}
+	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) override {}
+
+private:
+	FCustomGrassRenderSystem* RenderSystem;
+};
+*/

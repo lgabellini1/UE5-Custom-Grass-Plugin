@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include "Modules/ModuleManager.h"
-
 class FCustomGrassModule : public IModuleInterface
 {
 public:
@@ -12,6 +10,9 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 };
+
+
+/* Console vars */
 
 extern TAutoConsoleVariable<int32> CVarCustomGrassEnabled;
 

@@ -36,7 +36,6 @@ float MaxRenderDistance;
 	int SectionBaseY;
 
 	float4x4 LandscapeLocalToWorld;
-	float4x4 LandscapeWorldToLocal;
 //}
 
 Texture2D<float4> HeightmapTexture;
@@ -101,9 +100,14 @@ bool TestInstanceCulling(FGrassBladeData InstanceData)
  */
 float SampleHeightmap(float2 UV)
 {
+	float2 HeightmapScale = HeightmapScaleBias.xy;
+	float2 HeightmapBias  = HeightmapScaleBias.zw;
+
+	float2 SampleUV = UV * HeightmapScale + HeightmapBias;
+	
 	// Heightmap uses a 32bit RGBA format,
 	// but only the first two channels represent the actual 16-bit heightmap, so we need to unpack it.
-	float2 PackedHeight = HeightmapTexture.SampleLevel(HeightmapSampler, UV, 0).xy;
+	float2 PackedHeight = HeightmapTexture.SampleLevel(HeightmapSampler, SampleUV, 0).xy;
 
 	return DecodePackedHeight(PackedHeight);
 }
@@ -171,26 +175,6 @@ float2 ComputeFacing(float3 Position, uint Hash, float2 ToClumpCenter)
 	bool IsDegenerate = FinalFacing == float2(0, 0);
 	
 	return select(IsDegenerate, float2(0.1, 0.1), FinalFacing);
-	
-	/*
-	float2 ToCameraDir = normalize(ViewOrigin.xy - Position.xy);
-
-	float M = 1.f;
-
-	float AlignmentToCamera = abs(dot(BaseFacing, ToCameraDir));
-	AlignmentToCamera = min(AlignmentToCamera, M) / M;
-
-	float Orientation = sign(dot(BaseFacing, ToCameraDir));
-	float MaxAngle = PI * 0.25f;
-	float Angle = min(RandomScaleValue(MaxAngle, 0.15f, Hash), MaxAngle);
-
-	float2 CorrectedFacing = float2(
-		ToCameraDir.x * cos(Angle) - ToCameraDir.y * sin(Angle),
-		ToCameraDir.x * sin(Angle) + ToCameraDir.y * cos(Angle)
-	) * Orientation;
-	
-	return normalize(lerp(BaseFacing, CorrectedFacing, 1 - AlignmentToCamera));
-	*/
 }
 
 /**
@@ -265,7 +249,7 @@ float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 	
 	float3 LocalNormal = float3(Dxy / QuadSize, 1.0f);
 	
-	return normalize(mul(LocalNormal, (float3x3)LandscapeWorldToLocal));
+	return normalize(mul((float3x3)LandscapeLocalToWorld, LocalNormal));
 }
 
 [numthreads(THREADS_X, THREADS_Y, 1)]
@@ -288,9 +272,6 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 
 	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
 	float2 FinalUV = saturate(JitteredUV + ToClumpCenter * RandomClumpStrength);
-
-	float2 HeightmapScale = HeightmapScaleBias.xy;
-	float2 HeightmapBias  = HeightmapScaleBias.zw;
 
 	float LandscapeLocalHeight = SampleHeightmap(FinalUV);
 	
