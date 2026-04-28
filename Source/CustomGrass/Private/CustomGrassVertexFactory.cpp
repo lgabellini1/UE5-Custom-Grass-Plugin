@@ -116,9 +116,11 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	FVertexInputStreamArray& VertexStreams) const
 {
 	auto* BatchUserData = static_cast<const FCustomGrassBatchUserData*>(BatchElement.UserData);
+	
 	const FRenderingResourceHandles* Handles = BatchUserData->ResourceHandles;
 	check(Handles);
-	
+
+	// Skip invalid tile
 	if (Handles->TileOffset == INDEX_NONE)
 		return;
 	
@@ -127,7 +129,6 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(InstanceDataBuffer, Handles->InstanceData);
 	ShaderBindings.Add(TileOffset, Handles->TileOffset);
 	ShaderBindings.Add(GrassBladeVertexCount, GetGrassBladeVertexCount(BatchUserData->LOD));
-
 	
 	/*
 	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);

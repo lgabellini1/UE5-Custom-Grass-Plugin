@@ -57,8 +57,8 @@ struct FVolatileBuffers
 	FRDGBufferSRVRef InstanceCounterSRV;
 	FRDGBufferUAVRef InstanceCounterUAV;
 
-	TStaticArray<FRDGBufferRef, MaxRenderedTiles> IndirectDrawArgs;
-	TStaticArray<FRDGBufferUAVRef, MaxRenderedTiles> IndirectDrawArgsUAV;
+	TStaticArray<FRDGBufferRef, GMaxRenderedTiles> IndirectDrawArgs;
+	TStaticArray<FRDGBufferUAVRef, GMaxRenderedTiles> IndirectDrawArgsUAV;
 };
 
 FCustomGrassRenderSystem::FCustomGrassRenderSystem()
@@ -110,13 +110,12 @@ FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
 	);
 }
 
-float FCustomGrassRenderSystem::CalcTileSortingScore(const FWorkDesc& Work)
+float FCustomGrassRenderSystem::CalcTileSortingScore(const FSceneView* View,
+	const FProxyLandscapeData& LandscapeData)
 {
-	const FVector3f CameraPos = FVector3f(Work.View->ViewMatrices.GetViewOrigin());
-	const FVector3f CameraToTile = GetTileCenter(*Work.LandscapeData) - CameraPos;
-	const FVector3f CameraFwd = FVector3f(Work.View->GetViewDirection());
+	FVector CameraToTile = GetTileCenter(LandscapeData) - View->ViewMatrices.GetViewOrigin();
 
-	const float Depth = FVector3f::DotProduct(CameraToTile, CameraFwd);
+	float Depth = FVector::DotProduct(CameraToTile, View->GetViewDirection());
 	
 	return Depth - 0.001f * CameraToTile.SizeSquared();
 }
@@ -133,38 +132,25 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 #if WITH_EDITOR
 	UE_LOG(LogTemp, Display, TEXT("--- CustomGrass: BeginFrame ---"));
 #endif
-	
-	TArray<FWorkDesc> SelectedWork;
-	SelectedWork.Reserve(MaxRenderedTiles);
 
-	for (const FWorkDesc& Work : QueuedWork)
+	if (QueuedWork.Num() > GMaxRenderedTiles)
 	{
-		if (Work.View->ViewFrustum.IntersectBox(FVector(GetTileCenter(*Work.LandscapeData)),
-			FVector(GetTileExtent(*Work.LandscapeData))))
+		QueuedWork.Sort([](const FWorkDesc& A, const FWorkDesc& B)
 		{
-			SelectedWork.Push(Work);
-		}
-	}
-	
-	if (SelectedWork.Num() > MaxRenderedTiles)
-	{
-		// Prioritize rendering according to distance to camera
-		SelectedWork.Sort([](const FWorkDesc& A, const FWorkDesc& B)
-		{
-			return CalcTileSortingScore(A) > CalcTileSortingScore(B);
+			return A.SortingScore > B.SortingScore;
 		});
-
-		SelectedWork.SetNum(MaxRenderedTiles);
+		
+		QueuedWork.SetNum(GMaxRenderedTiles);
 	}
 
-	for (int32 i = 0; i < SelectedWork.Num(); i++)
+	for (int32 i = 0; i < QueuedWork.Num(); i++)
 	{
 		// Handle re-assignment: take the handle from each proxy to be rendered
 		// and make it point to the correct buffer. Somewhat of a hack and not very
 		// clean architecturally, but it works as a solution for this circular dependency
 		// between render system and proxy.
 		
-		const FWorkDesc& Work = SelectedWork[i];
+		const FWorkDesc& Work = QueuedWork[i];
 		
 		FRenderingResourceHandles& ResourceHandles = Work.ResourceHandles.Get();
 		ResourceHandles.InstanceData	 = TryGetSRV(InstanceDataBuffer);
@@ -179,12 +165,12 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 		*/
 	}
 
-	if (SelectedWork.Num() > 0)
+	if (QueuedWork.Num() > 0)
 	{
 		FVolatileBuffers Buffers;
 		InitPerFrameResources(GraphBuilder, Buffers);
 
-		SubmitWork(GraphBuilder, Buffers, SelectedWork);
+		SubmitWork(GraphBuilder, Buffers, QueuedWork);
 	}
 }
 
@@ -221,41 +207,36 @@ FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThrea
 	);
 }
 
-bool FCustomGrassRenderSystem::AddRenderingWork(const FSceneView* View, float CameraDistanceSqr,
+bool FCustomGrassRenderSystem::AddRenderingWork(const FSceneView* View,
 	const FProxyLandscapeData* LandscapeData,
 	const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
 	const FCustomGrassSceneProxy* Proxy,
-	EGrassLOD LOD)
+	EGrassLOD& InLOD)
 {
 	check(IsInAnyRenderingThread());
 
 	/* Ensure thread-safe writing of QueuedWork from the various worker threads, so that
 	 * only one can insert at a time. */
 	FScopeLock Lock(&AddRenderingWorkCS);
-	
-//	if (RegisteredProxies.Contains(Proxy))
-//		return false;
-	
-/*	if (QueuedWork.Num() >= MaxRenderedTiles)
-	{
-		if (const float FarthestQueued = QueuedWork.Last().CameraDistanceSqr;
-			CameraDistanceSqr >= FarthestQueued)
-		{
-			return false;
-		}
 
-		QueuedWork.Pop();
-	}*/
+	// Frustum culling
+	if (!View->ViewFrustum.IntersectBox(FVector(GetTileCenter(*LandscapeData)),
+		FVector(GetTileExtent(*LandscapeData))))
+		return false;
 
-//	RegisteredProxies.Add(Proxy);
-
-/*	const int32 Slot = Algo::LowerBound(QueuedWork, CameraDistanceSqr,
-		[](const FWorkDesc& Work, float CameraDistanceSqr)
-		{
-			return Work.CameraDistanceSqr < CameraDistanceSqr;
-		});*/
+	auto CameraXY = FVector2f(FVector3f(View->ViewMatrices.GetViewOrigin()));
+	auto TileXY = FVector2f(FVector3f(GetClosestPointToTile(View, *LandscapeData)));
 	
-	QueuedWork.Push(FWorkDesc{ View, CameraDistanceSqr, LandscapeData, ResourceHandles, LOD });
+	float CameraToTileDist = FVector2f::Distance(CameraXY, TileXY);
+
+	if (CameraToTileDist <= GetDistanceThreshold(EGrassLOD::LOD1))
+		InLOD = EGrassLOD::LOD0;
+	else
+		InLOD = EGrassLOD::LOD1;
+	
+	float TileSortingScore = CalcTileSortingScore(View, *LandscapeData);
+	
+	QueuedWork.Push(FWorkDesc{ View, LandscapeData, ResourceHandles, InLOD, TileSortingScore });
 	
 	return true;
 }
@@ -404,7 +385,7 @@ void FCustomGrassRenderSystem::InitPerFrameResources(FRDGBuilder& GraphBuilder, 
 	// Instance counter
 	
 	const FRDGBufferDesc InstanceCounterDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32),
-		MaxRenderedTiles);
+		GMaxRenderedTiles);
 	
 	OutBuffers.InstanceCounter	  = GraphBuilder.CreateBuffer(InstanceCounterDesc, TEXT("InstanceCounter"));
 	OutBuffers.InstanceCounterSRV = GraphBuilder.CreateSRV(

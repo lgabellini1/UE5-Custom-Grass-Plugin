@@ -101,71 +101,8 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 		{
 			const FSceneView* View = Views[ViewIndex];
 
-			const auto Camera = FVector3f(View->ViewMatrices.GetViewOrigin());
-			
-			const FVector3f TileCenter = GetTileCenter(LandscapeData);
-			const FVector3f TileHalfExtent = GetTileExtent(LandscapeData);
-
-			const float CameraDist = FVector3f::Distance(TileCenter, Camera);
-			const float CameraDistSqr = FMath::Square(CameraDist);
-			
-			const FVector3f TileMin = TileCenter - TileHalfExtent;
-			const FVector3f TileMax = TileCenter + TileHalfExtent;
-
-			const auto Closest = FVector3f(
-				FMath::Clamp(Camera.X, TileMin.X, TileMax.X),
-				FMath::Clamp(Camera.Y, TileMin.Y, TileMax.Y),
-				FMath::Clamp(Camera.Z, TileMin.Z, TileMax.Z)
-			);
-			
-			const float DistanceToTile = FMath::Max(0,
-				FVector2f::Distance(FVector2f(Camera), FVector2f(Closest)));
-
-			EGrassLOD LOD = EGrassLOD::LOD0;
-			/*if (DistanceToTile <= GetLODDistanceThreshold(EGrassLOD::LOD1))
-				LOD = EGrassLOD::LOD0;
-			else
-				LOD = EGrassLOD::LOD1;*/
-
-			/*
-			const FVector3f CameraOrigin = FVector3f(View->ViewMatrices.GetViewOrigin());
-			const FVector3f TileCenter	 = GetTileCenter(LandscapeData);
-			
-			const FVector3f ViewFwd		 = FVector3f(-View->GetViewDirection());
-
-			const FVector3f TileHalfExtent = GetTileExtent(LandscapeData) * 0.5f;
-
-			const FVector3f ClosestPoint = FVector3f(
-				FMath::Clamp(CameraOrigin.X, (TileCenter - TileHalfExtent).X, (TileCenter + TileHalfExtent).X),
-				FMath::Clamp(CameraOrigin.Y, (TileCenter - TileHalfExtent).Y, (TileCenter + TileHalfExtent).Y),
-				FMath::Clamp(CameraOrigin.Z, (TileCenter - TileHalfExtent).Z, (TileCenter + TileHalfExtent).Z));
-			
-			const FVector3f ToTile = ClosestPoint - CameraOrigin;
-			
-			float Depth = FMath::Abs(FVector3f::DotProduct(ToTile, ViewFwd));
-
-			const float Threshold = GetLODDistanceThreshold(EGrassLOD::LOD1);
-			const EGrassLOD LOD = (Depth >= Threshold) ? EGrassLOD::LOD1 : EGrassLOD::LOD0;
-			
-			const float CameraDist = FVector3f::Distance(TileCenter, CameraOrigin);
-			const float CameraDistSqr = FMath::Square(CameraDist);
-			*/
-
-			/*
-			const float TileHalfSize = LandscapeData.ComponentSizeQuads
-				* LandscapeData.LocalToWorld.GetScaleVector().X * 0.5f;
-
-			const float EffectiveDist = FMath::Max(0.f, CameraDist - TileHalfSize);
-			const float EffectiveDistSqr = FMath::Square(EffectiveDist);
-
 			EGrassLOD LOD;
-			if (EffectiveDistSqr >= FMath::Square(GetLODDistanceThreshold(EGrassLOD::LOD1)))
-				LOD = EGrassLOD::LOD1;
-			else
-				LOD = EGrassLOD::LOD0;
-			*/
-
-			const bool bWillRender = RenderSystem->AddRenderingWork(View, CameraDistSqr, &LandscapeData,
+			bool bWillRender = RenderSystem->AddRenderingWork(View, &LandscapeData,
 				ResourceHandles.ToSharedRef(), this, LOD);
 			if (!bWillRender)
 				continue;
@@ -175,9 +112,9 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 			Mesh.VertexFactory = VertexFactory;
 			Mesh.Type = PT_TriangleStrip;
 
-			Mesh.bUseForMaterial	 = true;
-			Mesh.bUseForDepthPass 	 = true;
-			Mesh.CastShadow		  	 = true;
+			Mesh.bUseForMaterial  = true;
+			Mesh.bUseForDepthPass = true;
+			Mesh.CastShadow		  = true;
 
 			Mesh.Elements.SetNumZeroed(1);
 			FMeshBatchElement& BatchElement = Mesh.Elements[0];
@@ -228,17 +165,33 @@ uint32 FCustomGrassSceneProxy::GetMemoryFootprint() const
 	return sizeof(*this) + FPrimitiveSceneProxy::GetAllocatedSize();
 }
 
-FVector3f GetTileCenter(const FProxyLandscapeData& LandscapeData)
+FVector GetTileCenter(const FProxyLandscapeData& LandscapeData)
 {
-	const float QuadSize = LandscapeData.LocalToWorld.GetScaleVector().X;
-	const float ComponentSizeQuads = LandscapeData.ComponentSizeQuads;
+	float QuadSize = LandscapeData.LocalToWorld.GetScaleVector().X;
 
-	const FVector2f TileCenterInQuads = FVector2f(LandscapeData.SectionBase) + ComponentSizeQuads * 0.5f;
+	FVector2f TileCenterInQuads = FVector2f(LandscapeData.SectionBase) + LandscapeData.ComponentSizeQuads * 0.5f;
 
-	return LandscapeData.LocalToWorld.GetOrigin() + FVector3f(TileCenterInQuads * QuadSize, 0.f);
+	return FVector(LandscapeData.LocalToWorld.GetOrigin() + FVector3f(TileCenterInQuads * QuadSize, 0.f));
 }
 
-FVector3f GetTileExtent(const FProxyLandscapeData& LandscapeData)
+FVector GetTileExtent(const FProxyLandscapeData& LandscapeData)
 {
-	return LandscapeData.BoundingBox;
+	return FVector(LandscapeData.BoundingBox);
+}
+
+FVector GetClosestPointToTile(const FSceneView* View, const FProxyLandscapeData& LandscapeData)
+{
+	FVector Camera = View->ViewMatrices.GetViewOrigin();
+
+	FVector TileCenter = GetTileCenter(LandscapeData);
+	FVector TileExtent = GetTileExtent(LandscapeData);
+	
+	FVector TileMin = TileCenter - TileExtent;
+	FVector TileMax = TileCenter + TileExtent;
+
+	return FVector(
+		FMath::Clamp(Camera.X, TileMin.X, TileMax.X),
+		FMath::Clamp(Camera.Y, TileMin.Y, TileMax.Y),
+		FMath::Clamp(Camera.Z, TileMin.Z, TileMax.Z)
+	);
 }

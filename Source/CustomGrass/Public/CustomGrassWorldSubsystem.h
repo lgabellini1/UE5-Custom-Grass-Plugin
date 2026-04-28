@@ -50,7 +50,7 @@ static constexpr int32 GIndexedIndirectDrawArgsNum = 5;
  * A ceil on the number of rendered tiles. This lets us avoid unexpected memory
  * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
  */
-static constexpr int32 MaxRenderedTiles = 2;
+static constexpr int32 GMaxRenderedTiles = 2;
 
 
 /** Matches the homonymous struct in shader code. */
@@ -191,10 +191,10 @@ class FCustomGrassRenderSystem
 	struct FWorkDesc
 	{
 		const FSceneView* View;
-		float CameraDistanceSqr;
 		const FProxyLandscapeData* LandscapeData;
 		const TSharedRef<FRenderingResourceHandles> ResourceHandles;
 		EGrassLOD LOD;
+		float SortingScore;
 	};
 
 	/** RT-copy of grass parameters from the data asset. */
@@ -241,11 +241,11 @@ public:
 	/**
 	 * Called by proxies to register themselves for rendering work.
 	 */ 
-	bool AddRenderingWork(const FSceneView* View, float CameraDistanceSqr,
+	bool AddRenderingWork(const FSceneView* View, 
 		const FProxyLandscapeData* LandscapeData,
 		const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
 		const FCustomGrassSceneProxy* Proxy,
-		EGrassLOD LOD);
+		EGrassLOD& InLOD);
 
 	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
 
@@ -268,7 +268,8 @@ protected:
 
 	void InitPerFrameResources(FRDGBuilder& GraphBuilder, FVolatileBuffers& OutBuffers) const;
 	
-	static float CalcTileSortingScore(const FWorkDesc& Work);
+	static float CalcTileSortingScore(const FSceneView* View,
+		const FProxyLandscapeData& LandscapeData);
 	
 	/**
 	 * Each of these buffers is made up of several "partitions", one
@@ -282,10 +283,10 @@ protected:
 	 */
 	FRDGPooledBufferRef InstanceDataBuffer;
 
-	TStaticArray<FRDGPooledBufferRef, MaxRenderedTiles> IndirectDrawArgsBuffer;
+	TStaticArray<FRDGPooledBufferRef, GMaxRenderedTiles> IndirectDrawArgsBuffer;
 
 	const FRDGBufferDesc InstanceDataBufferDesc = FRDGBufferDesc::CreateStructuredDesc(
-		sizeof(FGrassBladeData), MaxRenderedTiles * InstanceCountPerTile.X * InstanceCountPerTile.Y);
+		sizeof(FGrassBladeData), GMaxRenderedTiles * InstanceCountPerTile.X * InstanceCountPerTile.Y);
 
 	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(sizeof(uint32),
 		GIndexedIndirectDrawArgsNum);

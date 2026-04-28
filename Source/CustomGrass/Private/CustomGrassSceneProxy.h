@@ -29,9 +29,11 @@ struct FProxyLandscapeData
 	FMatrix44f LocalToWorld;
 };
 
-FVector3f GetTileCenter(const FProxyLandscapeData& LandscapeData);
+FVector GetTileCenter(const FProxyLandscapeData& LandscapeData);
 
-FVector3f GetTileExtent(const FProxyLandscapeData& LandscapeData);
+FVector GetTileExtent(const FProxyLandscapeData& LandscapeData);
+
+FVector GetClosestPointToTile(const FSceneView* View, const FProxyLandscapeData& LandscapeData);
 
 
 class FCustomGrassSceneProxy final : public FPrimitiveSceneProxy
@@ -42,7 +44,6 @@ public:
 
 protected:
 	virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
-
 	virtual void DestroyRenderThreadResources() override;
 	
 	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override;
@@ -54,7 +55,6 @@ protected:
 		FMeshElementCollector& Collector) const override;
 	
 	virtual SIZE_T GetTypeHash() const override;
-
 	virtual uint32 GetMemoryFootprint() const override;
 
 	

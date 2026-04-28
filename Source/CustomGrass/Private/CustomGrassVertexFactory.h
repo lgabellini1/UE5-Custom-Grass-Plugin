@@ -118,10 +118,16 @@ protected:
 	/* Wind parameters */
 	
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseTexture);
+	
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseSampler);
+	
 	LAYOUT_FIELD(FShaderParameter, WindDirection);
+	
 	LAYOUT_FIELD(FShaderParameter, WindStrength);
+	
 	LAYOUT_FIELD(FShaderParameter, Time);
+
+	/* Others */
 
 	LAYOUT_FIELD(FShaderParameter, ViewSpaceCorrection);
 
