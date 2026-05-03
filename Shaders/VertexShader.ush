@@ -3,7 +3,7 @@
 // On its own file to keep the actual VS implementation separate from
 // factory boilerplate code. 
 
-StructuredBuffer<FGrassBladeData> InInstanceDataBuffer;
+StructuredBuffer<FGrassBladeDataPacked> InInstanceDataBuffer;
 int TileOffset;
 
 /* Wind */
@@ -15,6 +15,11 @@ float WindStrength;
 float Time;
 
 /* Others */
+
+float MaxGrassHeight;
+float MaxGrassWidth;
+float MaxGrassTilt;
+float MaxGrassBend;
 
 float NormalRoundnessStrength;
 
@@ -144,7 +149,10 @@ void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCo
 void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
 	inout float2 OutLocalUV, inout float3 OutWorldPos, inout float3 OutWorldNormal, inout float4 OutDebugValue)
 {
-	FGrassBladeData GrassBlade = InInstanceDataBuffer[InstanceId + TileOffset];
+	FGrassBladeData GrassBlade = UnpackGrassBladeData(
+		InInstanceDataBuffer[InstanceId + TileOffset],
+		MaxGrassHeight, MaxGrassWidth, MaxGrassTilt, MaxGrassBend
+	);
 	
 	const int SegmentCount = (GrassBladeVertexCount - 1) / 2;
 	

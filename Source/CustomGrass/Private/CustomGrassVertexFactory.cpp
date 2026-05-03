@@ -98,6 +98,11 @@ void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& Para
 	WindStrength.Bind(ParameterMap, TEXT("WindStrength"));
 	Time.Bind(ParameterMap, TEXT("Time"));
 
+	MaxGrassHeight.Bind(ParameterMap, TEXT("MaxGrassHeight"));
+	MaxGrassWidth.Bind(ParameterMap, TEXT("MaxGrassWidth"));
+	MaxGrassTilt.Bind(ParameterMap, TEXT("MaxGrassTilt"));
+	MaxGrassBend.Bind(ParameterMap, TEXT("MaxGrassBend"));
+
 	ViewSpaceCorrection.Bind(ParameterMap, TEXT("ViewSpaceCorrection"));
 
 	NormalRoundnessStrength.Bind(ParameterMap, TEXT("NormalRoundnessStrength"));
@@ -129,6 +134,11 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(InstanceDataBuffer, Handles->InstanceData);
 	ShaderBindings.Add(TileOffset, Handles->TileOffset);
 	ShaderBindings.Add(GrassBladeVertexCount, GetGrassBladeVertexCount(BatchUserData->LOD));
+
+	ShaderBindings.Add(MaxGrassHeight, GMaxGrassBladeHeight);
+	ShaderBindings.Add(MaxGrassWidth, GMaxGrassBladeWidth);
+	ShaderBindings.Add(MaxGrassTilt, GMaxGrassBladeTilt);
+	ShaderBindings.Add(MaxGrassBend, GMaxGrassBladeBend);
 	
 	/*
 	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);

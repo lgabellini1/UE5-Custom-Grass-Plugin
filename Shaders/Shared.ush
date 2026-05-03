@@ -10,6 +10,15 @@
 	uint Hash;
 };
 
+struct FGrassBladeDataPacked
+{
+	float3 Position;
+	uint Hash;
+	uint FacingAndNormal;
+	uint HeightWidth;
+	uint TiltBend;
+};
+
 int GrassBladeVertexCount;
 
 /* Utilities */
@@ -94,4 +103,104 @@ float3 CubicBezierDerivative(float3 p0, float3 p1, float3 p2, float3 p3, float t
 	float3 p12 = lerp(p1, p2, t);
 	float3 p23 = lerp(p2, p3, t);
 	return 3.0f * (lerp(p12, p23, t) - lerp(p01, p12, t));
+}
+
+/* Packing */
+
+float2 OctWrap(float2 V)
+{
+	return (1.0 - abs(V.yx)) * select(V.xy >= 0.0, 1.f, -1.f);
+}
+
+uint PackFacingAndNormal(float2 Facing, float3 Normal)
+{
+	// Facing: two float [0,1] → uint8 each
+	uint FacingX = (uint)(Facing.x * 255.0);
+	uint FacingY = (uint)(Facing.y * 255.0);
+
+	// Normal: oct-encode → two int8
+	float3 P = Normal / (abs(Normal.x) + abs(Normal.y) + abs(Normal.z));
+	float2 Pxy = P.z >= 0.0 ? P.xy : OctWrap(P.xy);
+	Pxy = clamp(Pxy, -1.0, 1.0);
+	uint NormalX = (uint)(int)(Pxy.x * 127.0) & 0xFF;
+	uint NormalY = (uint)(int)(Pxy.y * 127.0) & 0xFF;
+
+	return FacingX | (FacingY << 8) | (NormalX << 16) | (NormalY << 24);
+}
+
+uint PackFloats16(float F1, float F2, float F1Min, float F1Max, float F2Min, float F2Max)
+{
+	uint P1 = (uint)(clamp((F1 - F1Min) / (F1Max - F1Min), 0.0, 1.0) * 65535.0);
+	uint P2 = (uint)(clamp((F2  - F2Min)  / (F2Max  - F2Min),  0.0, 1.0) * 65535.0);
+	return P1 | (P2 << 16);
+}
+
+float2 UnpackFacing(uint PackedFacingNormal)
+{
+	float X = (PackedFacingNormal & 0xFF) / 255.0;
+	float Y = ((PackedFacingNormal >> 8) & 0xFF) / 255.0;
+	return float2(X, Y);
+}
+
+float3 UnpackNormal(uint PackedFacingNormal)
+{
+	int RawX = (int)((PackedFacingNormal >> 16) & 0xFF);
+	int RawY = (int)((PackedFacingNormal >> 24) & 0xFF);
+
+	// Sign-extend from 8 to 32 bit
+	RawX = RawX > 127 ? RawX - 256 : RawX;
+	RawY = RawY > 127 ? RawY - 256 : RawY;
+
+	float2 P = float2(RawX, RawY) / 127.0;
+
+	float3 N = float3(P, 1.0 - abs(P.x) - abs(P.y));
+	float T = saturate(-N.z);
+	N.xy += N.xy >= 0.0 ? -T : T;
+	
+	return normalize(N);
+}
+
+float UnpackFloat16(uint PackedFloat, bool bHighBits, float Min, float Max)
+{
+	uint Raw = bHighBits ? (PackedFloat >> 16) : (PackedFloat & 0xFFFF);
+	return Min + (Raw / 65535.0) * (Max - Min);
+}
+
+FGrassBladeDataPacked PackGrassBladeData(FGrassBladeData Data,
+	float MaxGrassHeight, float MaxGrassWidth, float MaxGrassTilt, float MaxGrassBend)
+{
+	FGrassBladeDataPacked Result;
+
+	Result.Position = Data.Position;
+	Result.Hash = Data.Hash;
+
+	Result.FacingAndNormal = PackFacingAndNormal(Data.Facing, Data.TerrainNormal);
+
+	Result.HeightWidth = PackFloats16(Data.Height, Data.Width,
+		0.f, MaxGrassHeight, 0.f, MaxGrassWidth);
+
+	Result.TiltBend = PackFloats16(Data.Tilt, Data.Bend,
+		0.f, MaxGrassTilt, 0.f, MaxGrassBend);
+
+	return Result;
+}
+
+FGrassBladeData UnpackGrassBladeData(FGrassBladeDataPacked PackedData,
+	float MaxGrassHeight, float MaxGrassWidth, float MaxGrassTilt, float MaxGrassBend)
+{
+	FGrassBladeData Data;
+	
+	Data.Position = PackedData.Position;
+	Data.Hash	  = PackedData.Hash;
+	
+	Data.Facing = UnpackFacing(PackedData.FacingAndNormal);
+	Data.TerrainNormal = UnpackNormal(PackedData.FacingAndNormal);
+
+	Data.Height = UnpackFloat16(PackedData.HeightWidth, false, 0.f, MaxGrassHeight);
+	Data.Width = UnpackFloat16(PackedData.HeightWidth, true, 0.f, MaxGrassWidth);
+
+	Data.Tilt = UnpackFloat16(PackedData.TiltBend, false, 0.f, MaxGrassTilt);
+	Data.Bend = UnpackFloat16(PackedData.TiltBend, true, 0.f, MaxGrassBend);
+
+	return Data;
 }

@@ -5,7 +5,7 @@
 
 /* COMPUTE SHADER #1: instance grass blades */
 
-RWStructuredBuffer<FGrassBladeData> OutInstanceDataBuffer;
+RWStructuredBuffer<FGrassBladeDataPacked> OutInstanceDataBuffer;
 
 /** Accumulator for the number of visible instances on each tile. */
 RWBuffer<uint> OutInstanceCounter;
@@ -45,15 +45,19 @@ SamplerState HeightmapSampler;
 //{
 	float GrassParams_Height;
 	float GrassParams_RandHeight;
+	float GrassParams_MaxHeight;
 
  	float GrassParams_Width;
 	float GrassParams_RandWidth;
+	float GrassParams_MaxWidth;
 
 	float GrassParams_Tilt;
 	float GrassParams_RandTilt;
+	float GrassParams_MaxTilt;
 
 	float GrassParams_Bend;
 	float GrassParams_RandBend;
+	float GrassParams_MaxBend;
 
 	float GrassParams_ClumpStrength;
 	float GrassParams_RandClumpStrength;
@@ -306,7 +310,8 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 	
 	if (!IsCulled)
 	{
-		OutInstanceDataBuffer[BufferWriteIndex] = GrassBlade;
+		OutInstanceDataBuffer[BufferWriteIndex] = PackGrassBladeData(GrassBlade,
+			GrassParams_MaxHeight, GrassParams_MaxWidth, GrassParams_MaxTilt, GrassParams_MaxBend);
 	}
 }
 

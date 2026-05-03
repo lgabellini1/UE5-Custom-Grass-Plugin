@@ -129,6 +129,14 @@ protected:
 
 	/* Others */
 
+	LAYOUT_FIELD(FShaderParameter, MaxGrassHeight);
+
+	LAYOUT_FIELD(FShaderParameter, MaxGrassWidth);
+
+	LAYOUT_FIELD(FShaderParameter, MaxGrassTilt);
+
+	LAYOUT_FIELD(FShaderParameter, MaxGrassBend);
+
 	LAYOUT_FIELD(FShaderParameter, ViewSpaceCorrection);
 
 	LAYOUT_FIELD(FShaderParameter, NormalRoundnessStrength);

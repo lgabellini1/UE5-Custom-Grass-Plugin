@@ -297,6 +297,11 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	GrassParams.ClumpFacingType		= static_cast<uint8>(DataAssetProxy.ClumpFacingType);
 	GrassParams.ClumpFacingStrength = DataAssetProxy.ClumpFacingStrength;
 
+	GrassParams.MaxHeight = GMaxGrassBladeHeight;
+	GrassParams.MaxWidth  = GMaxGrassBladeWidth;
+	GrassParams.MaxTilt	  = GMaxGrassBladeTilt;
+	GrassParams.MaxBend   = GMaxGrassBladeBend;
+
 	GrassParams.RandHeight		  = DataAssetProxy.Height.Random;
 	GrassParams.RandWidth		  = DataAssetProxy.Width.Random;
 	GrassParams.RandTilt		  = DataAssetProxy.Tilt.Random;

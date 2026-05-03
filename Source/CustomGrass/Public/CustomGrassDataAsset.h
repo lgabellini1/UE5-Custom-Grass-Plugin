@@ -14,6 +14,14 @@ enum class EClumpFacingType : uint8
 	OppositeClumpCenter
 };
 
+static constexpr float GMaxGrassBladeHeight = 50.f;
+
+static constexpr float GMaxGrassBladeWidth = 2.f;
+
+static constexpr float GMaxGrassBladeTilt = 10.f;
+
+static constexpr float GMaxGrassBladeBend = 10.f;
+
 UCLASS()
 class UCustomGrassDataAsset : public UDataAsset
 {
@@ -23,25 +31,29 @@ public:
 	UPROPERTY(EditAnywhere, Category="Material")
 	TObjectPtr<UMaterialInterface> Material = nullptr;
 
-	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0"))
-	float Height = 1.f;
+	// "ClampMax" value must match "GMaxGrassBladeHeight"!
+	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="50.0"))
+	float Height = 15.f;
 
 	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float RandomizeHeight = 0.f;
 
-	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0"))
+	// "ClampMax" value must match "GMaxGrassBladeWidth"!
+	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="2.0"))
 	float Width = 1.f;
 
 	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float RandomizeWidth = 0.f;
 
-	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0"))
+	// "ClampMax" value must match "GMaxGrassBladeTilt"!
+	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="10.0"))
 	float Tilt = 1.f;
 
 	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float RandomizeTilt = 0.f;
 
-	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0"))
+	// "ClampMax" value must match "GMaxGrassBladeBend"!
+	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="10.0"))
 	float Bend = 0.f;
 
 	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="1.0"))

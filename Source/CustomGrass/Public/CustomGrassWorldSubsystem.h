@@ -66,16 +66,30 @@ struct FGrassBladeData
 	uint32 Hash;
 };
 
+/** Memory-efficient version of FGrassBladeData. */
+struct FGrassBladeDataPacked
+{
+	FVector3f Position;
+	uint32 Hash;
+	uint32 FacingAndNormal; // Facing=uint8[2], Normal=int8[2]
+	uint32 HeightWidth; // Height=uint16, Width=uint16
+	uint32 TiltBend;// Tilt=uint16, Bend=uint16
+};
+
 /** Artist-controlled grass parameters. */
 BEGIN_SHADER_PARAMETER_STRUCT(FGrassParams,)
 	SHADER_PARAMETER(float, Height)
 	SHADER_PARAMETER(float, RandHeight)
+	SHADER_PARAMETER(float, MaxHeight)
 	SHADER_PARAMETER(float, Width)
 	SHADER_PARAMETER(float, RandWidth)
+	SHADER_PARAMETER(float, MaxWidth)
 	SHADER_PARAMETER(float, Tilt)
 	SHADER_PARAMETER(float, RandTilt)
+	SHADER_PARAMETER(float, MaxTilt)
 	SHADER_PARAMETER(float, Bend)
 	SHADER_PARAMETER(float, RandBend)
+	SHADER_PARAMETER(float, MaxBend)
 	SHADER_PARAMETER(float, ClumpStrength)
 	SHADER_PARAMETER(float, RandClumpStrength)
 	SHADER_PARAMETER(uint32, ClumpFacingType)
@@ -88,7 +102,7 @@ END_SHADER_PARAMETER_STRUCT()
 class FInstanceGrassBladeCS : public FGlobalShader
 {
 	BEGIN_SHADER_PARAMETER_STRUCT(FInstanceGrassBladeCSParams,)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<FGrassBladeData>, OutInstanceDataBuffer)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<FGrassBladeDataPacked>, OutInstanceDataBuffer)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutInstanceCounter)
 		SHADER_PARAMETER(int32, TileIndex)
 		SHADER_PARAMETER(int32, InstanceCountPerTileX)
@@ -286,7 +300,8 @@ protected:
 	TStaticArray<FRDGPooledBufferRef, GMaxRenderedTiles> IndirectDrawArgsBuffer;
 
 	const FRDGBufferDesc InstanceDataBufferDesc = FRDGBufferDesc::CreateStructuredDesc(
-		sizeof(FGrassBladeData), GMaxRenderedTiles * InstanceCountPerTile.X * InstanceCountPerTile.Y);
+		sizeof(FGrassBladeDataPacked),
+		GMaxRenderedTiles * GetInstanceCount(EGrassLOD::LOD0).X * GetInstanceCount(EGrassLOD::LOD0).Y);
 
 	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(sizeof(uint32),
 		GIndexedIndirectDrawArgsNum);
