@@ -107,7 +107,8 @@ float SampleHeightmap(float2 UV)
 	float2 HeightmapScale = HeightmapScaleBias.xy;
 	float2 HeightmapBias  = HeightmapScaleBias.zw;
 
-	float2 SampleUV = UV * HeightmapScale + HeightmapBias;
+	float2 LocalQuadPos = UV * ComponentSizeQuads;
+	float2 SampleUV = (LocalQuadPos + 0.5f) * HeightmapScale + HeightmapBias;
 	
 	// Heightmap uses a 32bit RGBA format,
 	// but only the first two channels represent the actual 16-bit heightmap, so we need to unpack it.
