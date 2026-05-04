@@ -23,7 +23,8 @@ public:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
 
-	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials = false) const override;
+	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials,
+		bool bGetDebugMaterials = false) const override;
 
 protected:
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;

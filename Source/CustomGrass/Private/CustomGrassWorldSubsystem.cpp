@@ -66,7 +66,6 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem()
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::BeginFrame);
 	GEngine->GetPostRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::EndFrame);
-//	ViewExtension = FSceneViewExtensions::NewExtension<FCustomGrassViewExtension>(this);
 	
 	ENQUEUE_RENDER_COMMAND(InitializeRTResources)
 	(
@@ -90,8 +89,6 @@ FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().RemoveAll(this);
 	GEngine->GetPostRenderDelegateEx().RemoveAll(this);
-
-//	ViewExtension = nullptr;
 	
 	ENQUEUE_RENDER_COMMAND(DestroyRTResources)
 	(
@@ -155,13 +152,14 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 		FRenderingResourceHandles& ResourceHandles = Work.ResourceHandles.Get();
 		ResourceHandles.InstanceData	 = TryGetSRV(InstanceDataBuffer);
 		ResourceHandles.IndirectDrawArgs = TryGetRHI(IndirectDrawArgsBuffer[i]);
-		ResourceHandles.TileOffset		 = i * InstanceCountPerTile.X * InstanceCountPerTile.Y;
+		ResourceHandles.TileOffset		 = i * GetInstanceCount(Work.LOD).X * GetInstanceCount(Work.LOD).Y;
+		
+		ResourceHandles.ViewSpaceCorrection		= DataAssetProxy.ViewSpaceCorrection;
+		ResourceHandles.ShortHeightThreshold	= DataAssetProxy.ShortHeightThreshold;
+		ResourceHandles.NormalRoundnessStrength = DataAssetProxy.NormalRoundnessStrength;
 		/*
 		ResourceHandles.WindParams = DataAssetProxy.WindParams;
 		ResourceHandles.WindParams.Time = Work.View->Family->Time.GetWorldTimeSeconds();
-		ResourceHandles.ViewSpaceCorrection = DataAssetProxy.ViewSpaceCorrection;
-		ResourceHandles.ShortHeightThreshold = DataAssetProxy.ShortHeightThreshold;
-		ResourceHandles.NormalRoundnessStrength = DataAssetProxy.NormalRoundnessStrength;
 		*/
 	}
 
@@ -186,7 +184,6 @@ void FCustomGrassRenderSystem::EndFrame(FRDGBuilder& GraphBuilder)
 #endif
 
 	QueuedWork.Empty();
-//	RegisteredProxies.Empty();
 }
 
 FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThread() const
@@ -312,8 +309,8 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->OutInstanceDataBuffer = InBuffers.InstanceDataBufferUAV;
 	Params->OutInstanceCounter	  = InBuffers.InstanceCounterUAV;
 	Params->TileIndex			  = TileIndex;
-	Params->InstanceCountPerTileX = InstanceCountPerTile.X;
-	Params->InstanceCountPerTileY = InstanceCountPerTile.Y;
+	Params->InstanceCountPerTileX = GetInstanceCount(Work.LOD).X;
+	Params->InstanceCountPerTileY = GetInstanceCount(Work.LOD).Y;
 #if WITH_EDITOR
 	Params->ViewProjectionMatrix = bFrozenViewFrustum ? CachedViewFrustum :
 		FMatrix44f(Work.View->ViewMatrices.GetViewProjectionMatrix());
@@ -331,7 +328,7 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->HeightmapSampler   = Tile->HeightmapSampler;
 	Params->GrassParams			  = GrassParams;
 
-	const FIntVector ThreadCount = FIntVector(InstanceCountPerTile.X, InstanceCountPerTile.Y, 1); // Total thread count, split among groups
+	const FIntVector ThreadCount = FIntVector(GetInstanceCount(Work.LOD).X, GetInstanceCount(Work.LOD).Y, 1); // Total thread count, split among groups
 	const int32 GroupSize 		 = FInstanceGrassBladeCS::GroupThreadCount.X;
 	const FIntVector GroupCount  = FComputeShaderUtils::GetGroupCount(ThreadCount, GroupSize);
 	FComputeShaderUtils::ValidateGroupCount(GroupCount);
@@ -459,9 +456,10 @@ void UCustomGrassWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 bool UCustomGrassWorldSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	const UWorld* World = Cast<UWorld>(Outer);
+	const auto* World = Cast<UWorld>(Outer);
 	
-	return World && (World->WorldType == EWorldType::Game || World->WorldType == EWorldType::PIE);
+	return World && (World->WorldType == EWorldType::Game
+		|| World->WorldType == EWorldType::PIE);
 }
 
 void UCustomGrassWorldSubsystem::SpawnComponents()

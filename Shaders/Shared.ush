@@ -50,6 +50,17 @@ float HashUIntToFloat(uint Hash)
 	return float(Hash) / float(0xFFFFFFFFu);
 }
 
+/**
+ * Scale a value randomly (according to hash) within a certain
+ * percentage, to introduce variation.
+ */
+float RandomScaleValue(float Value, float Perc, uint Hash)
+{
+	float ScalingFactor = Value * Perc *
+		(HashUIntToFloat(Hash) * 2.f - 1.f); // Random in [-1..1]
+	return Value + ScalingFactor;
+}
+
 float2 Rotate2DVec(float2 Vec, float Angle)
 {
 	float Sin, Cos;

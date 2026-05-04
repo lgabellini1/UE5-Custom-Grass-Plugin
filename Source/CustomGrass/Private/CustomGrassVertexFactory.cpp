@@ -139,6 +139,10 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(MaxGrassWidth, GMaxGrassBladeWidth);
 	ShaderBindings.Add(MaxGrassTilt, GMaxGrassBladeTilt);
 	ShaderBindings.Add(MaxGrassBend, GMaxGrassBladeBend);
+
+	ShaderBindings.Add(ViewSpaceCorrection, Handles->ViewSpaceCorrection);
+	ShaderBindings.Add(NormalRoundnessStrength, Handles->NormalRoundnessStrength);
+	ShaderBindings.Add(ShortHeightThreshold, Handles->ShortHeightThreshold);
 	
 	/*
 	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);
@@ -146,11 +150,5 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(WindDirection, ResourceHandles->WindParams.Direction);
 	ShaderBindings.Add(WindStrength, ResourceHandles->WindParams.Strength);
 	ShaderBindings.Add(Time, ResourceHandles->WindParams.Time);
-
-	ShaderBindings.Add(ViewSpaceCorrection, ResourceHandles->ViewSpaceCorrection);
-
-	ShaderBindings.Add(NormalRoundnessStrength, ResourceHandles->NormalRoundnessStrength);
-
-	ShaderBindings.Add(ShortHeightThreshold, ResourceHandles->ShortHeightThreshold);
 	*/
 }

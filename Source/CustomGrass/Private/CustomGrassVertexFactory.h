@@ -127,7 +127,7 @@ protected:
 	
 	LAYOUT_FIELD(FShaderParameter, Time);
 
-	/* Others */
+	/* Thresholds */
 
 	LAYOUT_FIELD(FShaderParameter, MaxGrassHeight);
 
@@ -136,6 +136,8 @@ protected:
 	LAYOUT_FIELD(FShaderParameter, MaxGrassTilt);
 
 	LAYOUT_FIELD(FShaderParameter, MaxGrassBend);
+
+	/* Others */
 
 	LAYOUT_FIELD(FShaderParameter, ViewSpaceCorrection);
 

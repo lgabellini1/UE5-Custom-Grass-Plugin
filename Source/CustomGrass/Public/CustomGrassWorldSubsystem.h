@@ -25,6 +25,7 @@ enum class EGrassLOD : uint8
 struct FLODSettings
 {
 	int32 VertexCount;
+	FIntPoint InstanceCount;
 	float DistanceThreshold;
 };
 
@@ -32,8 +33,8 @@ struct FLODSettings
 
 constexpr int32 GNumLODs = static_cast<int32>(EGrassLOD::NumLODs);
 
-constexpr auto LOD0Settings = FLODSettings(15, 0.f);
-constexpr auto LOD1Settings = FLODSettings(7, 200.f);
+const auto LOD0Settings = FLODSettings(15, FIntPoint(1024, 1024), 0.f);
+	const auto LOD1Settings = FLODSettings(7, FIntPoint(512, 512), 200.f);
 
 const auto GLODSettingsMap = TMap<EGrassLOD, FLODSettings>({
 	{EGrassLOD::LOD0, LOD0Settings},
@@ -41,6 +42,8 @@ const auto GLODSettingsMap = TMap<EGrassLOD, FLODSettings>({
 );
 
 inline int32 GetGrassBladeVertexCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].VertexCount; }
+
+inline FIntPoint GetInstanceCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].InstanceCount; }
 
 inline float GetDistanceThreshold(EGrassLOD LOD) { return GLODSettingsMap[LOD].DistanceThreshold; }
 
@@ -50,7 +53,7 @@ static constexpr int32 GIndexedIndirectDrawArgsNum = 5;
  * A ceil on the number of rendered tiles. This lets us avoid unexpected memory
  * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
  */
-static constexpr int32 GMaxRenderedTiles = 2;
+static constexpr int32 GMaxRenderedTiles = 4;
 
 
 /** Matches the homonymous struct in shader code. */
@@ -184,13 +187,12 @@ struct FRenderingResourceHandles
 	FShaderResourceViewRHIRef InstanceData;
 	FBufferRHIRef IndirectDrawArgs;
 	int32 TileOffset;
-
-	/*
-	FWindParams WindParams;
-	
 	float ViewSpaceCorrection;
 	float NormalRoundnessStrength;
 	float ShortHeightThreshold;
+
+	/*
+	FWindParams WindParams;
 	*/
 };
 
@@ -263,20 +265,15 @@ public:
 
 	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
 
-	static inline const FIntPoint InstanceCountPerTile = FIntPoint(512, 512);
-
 protected:
 
 	bool bIsActive = false;
-
 	bool bResourcesInitialized = false;
 	
 	FCriticalSection AddRenderingWorkCS;
 	
 	/** Scheduled rendering work for the current frame. */
 	TArray<FWorkDesc> QueuedWork;
-
-	TSet<const FCustomGrassSceneProxy*> RegisteredProxies;
 
 	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
 
@@ -344,12 +341,9 @@ class UCustomGrassWorldSubsystem : public UTickableWorldSubsystem
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-
 	virtual void Deinitialize() override;
-
 	
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
-
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
@@ -372,9 +366,7 @@ protected:
 	TArray<TObjectPtr<UCustomGrassPrimitiveComponent>> GrassTileComponents;
 
 	void SpawnComponents();
-
 	void DespawnComponents();
-	
 
 	/** Allows changing grass aspect dynamically. */
 	UPROPERTY()
@@ -388,37 +380,5 @@ protected:
 	/** Handles state change that causes system activation / deactivation. */
 	void RecomputeRunningState();
 
-
 	bool bIsActive = false;
 };
-
-/*
-class FCustomGrassViewExtension : public FSceneViewExtensionBase
-{
-public:
-	FCustomGrassViewExtension(const FAutoRegister& AutoRegister, FCustomGrassRenderSystem* InRenderSystem)
-		: FSceneViewExtensionBase(AutoRegister), RenderSystem(InRenderSystem) {}	
-
-	virtual void PreRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override
-	{
-		RenderSystem->InitFrame(GraphBuilder);
-	}
-
-	virtual void PostRenderViewFamily_RenderThread(FRDGBuilder& GraphBuilder, FSceneViewFamily& InViewFamily) override
-	{
-		RenderSystem->EndFrame(GraphBuilder);
-	}
-
-	virtual void PreRenderBasePass_RenderThread(FRDGBuilder& GraphBuilder, bool bDepthBufferIsPopulated) override
-	{
-		UE_LOG(LogTemp, Warning, TEXT("PreBasePass"));
-	}
-	
-	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override {}
-	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override {}
-	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) override {}
-
-private:
-	FCustomGrassRenderSystem* RenderSystem;
-};
-*/

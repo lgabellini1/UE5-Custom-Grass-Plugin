@@ -22,9 +22,7 @@ float MaxGrassTilt;
 float MaxGrassBend;
 
 float NormalRoundnessStrength;
-
 float ViewSpaceCorrection;
-
 float ShortHeightThreshold;
 
 
@@ -63,7 +61,8 @@ float3 ComputeViewSpaceShift(float3 Position, float IsTip, float OffsetSign, flo
 float3 GetRoundedNormals(float3 SurfaceNormal, float IsLeft, float RelativeHeight)
 {
 	float OffsetSign = IsLeft * 2.f - 1.f;
-	return normalize(SurfaceNormal - float3(NormalRoundnessStrength * OffsetSign * (1 - RelativeHeight), 0.f, 0.f));
+	return normalize(SurfaceNormal -
+		float3(NormalRoundnessStrength * OffsetSign * (1 - RelativeHeight), 0.f, 0.f));
 }
 
 /**
@@ -154,7 +153,7 @@ void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
 		MaxGrassHeight, MaxGrassWidth, MaxGrassTilt, MaxGrassBend
 	);
 	
-	const int SegmentCount = (GrassBladeVertexCount - 1) / 2;
+	int SegmentCount = (GrassBladeVertexCount - 1) / 2;
 	
 	if (GrassBlade.Height < ShortHeightThreshold)
 	{
