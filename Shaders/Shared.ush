@@ -72,13 +72,20 @@ float2 Rotate2DVec(float2 Vec, float Angle)
 	));
 }
 
-bool IsInsideFrustum(float3 Center, float Radius)
+bool IsOutsideFrustum(float3 Center, float Radius)
 {
 	float4 Clip = mul(float4(Center, 1.0f), ViewProjectionMatrix);
 
-	return	Clip.x >= -Clip.w - Radius && Clip.x <= Clip.w + Radius &&
-			Clip.y >= -Clip.w - Radius && Clip.y <= Clip.w + Radius &&
-			Clip.z >= -Radius		   && Clip.z <= Clip.w + Radius;
+    // Perspective divide to NDC
+    float InvW = 1.0f / Clip.w;
+    float3 NDC = Clip.xyz * InvW;
+
+    // Small epsilon to avoid popping at the edges
+    float Margin = 0.1f;
+
+    return !(NDC.x >= -1.0f - Margin && NDC.x <= 1.0f + Margin &&
+			 NDC.y >= -1.0f - Margin && NDC.y <= 1.0f + Margin &&
+			 NDC.z >=  0.0f          && NDC.z <= 1.0f);
 }
 
 /**

@@ -311,8 +311,8 @@ protected:
 		sizeof(FGrassBladeDataPacked),
 		GMaxRenderedTiles * GetInstanceCount(EGrassLOD::LOD0).X * GetInstanceCount(EGrassLOD::LOD0).Y);
 
-	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(sizeof(uint32),
-		GIndexedIndirectDrawArgsNum);
+	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(
+		sizeof(uint32), GIndexedIndirectDrawArgsNum);
 	
 	/**
 	 * Representation of the data asset as cached on the render-thread.

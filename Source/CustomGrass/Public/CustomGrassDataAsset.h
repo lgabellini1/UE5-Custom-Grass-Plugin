@@ -72,7 +72,8 @@ public:
 	UPROPERTY(EditAnywhere, Category="Appearance | Clumps")
 	EClumpFacingType ClumpFacingType;
 	
-	UPROPERTY(editAnywhere, Category="Appearance | Clumps", meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditAnywhere, Category="Appearance | Clumps", meta=(ClampMin="0.0", ClampMax="1.0",
+		EditCondition="ClumpFacingType != EClumpFacingType::NoClumpFacing"))
 	float ClumpFacingStrength;
 
 	

@@ -80,9 +80,9 @@ SamplerState HeightmapSampler;
 bool TestInstanceCulling(FGrassBladeData InstanceData)
 {
 	float3 Center = InstanceData.Position + float3(0, 0, InstanceData.Height * 0.5f);
-	float Radius  = InstanceData.Height * 0.5f;
+	float Radius = InstanceData.Height * 0.5f;
 	
-	bool FrustumCulling = !IsInsideFrustum(Center, Radius);
+	bool FrustumCulling = IsOutsideFrustum(Center, Radius);
 
 	float3 Delta = InstanceData.Position - ViewOrigin.xyz;
 	bool DistanceCulling = dot(Delta, Delta) > MaxRenderDistance * MaxRenderDistance;
@@ -172,7 +172,7 @@ float2 ComputeFacing(uint Hash, float2 ToClumpCenter)
 	float2 FinalFacing = lerp(BaseFacing, ClumpFacing,
 		saturate(RandomScaleValue(GrassParams_ClumpFacingStrength, 0.1f, HashUIntToFloat(Hash))));
 
-	bool IsDegenerate = FinalFacing == float2(0, 0);
+	bool IsDegenerate = (FinalFacing == float2(0, 0));
 	
 	return select(IsDegenerate, float2(0.1, 0.1), FinalFacing);
 }

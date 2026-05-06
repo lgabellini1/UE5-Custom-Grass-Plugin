@@ -90,10 +90,6 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 	FMeshElementCollector& Collector) const
 {
 	check(IsInAnyRenderingThread());
-
-#if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("GetDynamicMeshElements: proxy=%p"), this);
-#endif
 	
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 	{

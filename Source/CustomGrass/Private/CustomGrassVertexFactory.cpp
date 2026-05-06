@@ -104,9 +104,7 @@ void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& Para
 	MaxGrassBend.Bind(ParameterMap, TEXT("MaxGrassBend"));
 
 	ViewSpaceCorrection.Bind(ParameterMap, TEXT("ViewSpaceCorrection"));
-
 	NormalRoundnessStrength.Bind(ParameterMap, TEXT("NormalRoundnessStrength"));
-
 	ShortHeightThreshold.Bind(ParameterMap, TEXT("ShortHeightThreshold"));
 }
 
