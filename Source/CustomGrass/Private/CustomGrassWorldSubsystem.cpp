@@ -130,14 +130,33 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 	UE_LOG(LogTemp, Display, TEXT("--- CustomGrass: BeginFrame ---"));
 #endif
 
-	if (QueuedWork.Num() > GMaxRenderedTiles)
+	// If the view has not changed, reuse previous frame's work. Useful to
+	// avoid flickering issues due to race conditions between grass tiles.
+	// We assume same SceneView for each work.
+	
+	if (const FSceneView* ThisView = QueuedWork.Num() > 0 ? QueuedWork[0].View : nullptr;
+		ThisView && IsPreviousFrameView(ThisView, PreviousFrameView) || (QueuedWork == PreviousFrameWork))
 	{
-		QueuedWork.Sort([](const FWorkDesc& A, const FWorkDesc& B)
+		// Patch stale View pointer from previous frame
+		for (FWorkDesc& Work : PreviousFrameWork)
+			Work.View = ThisView;
+
+		QueuedWork = PreviousFrameWork;
+	}
+	else
+	{
+		if (QueuedWork.Num() > GMaxRenderedTiles)
 		{
-			return A.SortingScore > B.SortingScore;
-		});
+			QueuedWork.Sort([](const FWorkDesc& A, const FWorkDesc& B)
+			{
+				return A.SortingScore > B.SortingScore;
+			});
 		
-		QueuedWork.SetNum(GMaxRenderedTiles);
+			QueuedWork.SetNum(GMaxRenderedTiles);
+		}
+
+		PreviousFrameWork = QueuedWork;
+		PreviousFrameView = ThisView;
 	}
 
 	for (int32 i = 0; i < QueuedWork.Num(); i++)
@@ -184,6 +203,15 @@ void FCustomGrassRenderSystem::EndFrame(FRDGBuilder& GraphBuilder)
 #endif
 
 	QueuedWork.Empty();
+}
+
+bool FCustomGrassRenderSystem::IsPreviousFrameView(const FSceneView* ThisFrameView, const FSceneView* PrevFrameView)
+{
+	if (!ThisFrameView && !PrevFrameView) return true;
+	if (!ThisFrameView || !PrevFrameView) return false;
+	
+	return ThisFrameView->ViewMatrices.GetViewProjectionMatrix().Equals(
+		PrevFrameView->ViewMatrices.GetViewProjectionMatrix());
 }
 
 FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThread() const

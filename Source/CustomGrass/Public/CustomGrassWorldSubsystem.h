@@ -211,6 +211,11 @@ class FCustomGrassRenderSystem
 		const TSharedRef<FRenderingResourceHandles> ResourceHandles;
 		EGrassLOD LOD;
 		float SortingScore;
+
+		bool operator==(const FWorkDesc&) const
+		{
+			return (this->LandscapeData == LandscapeData) && (this->LOD == LOD);
+		}
 	};
 
 	/** RT-copy of grass parameters from the data asset. */
@@ -274,6 +279,11 @@ protected:
 	
 	/** Scheduled rendering work for the current frame. */
 	TArray<FWorkDesc> QueuedWork;
+
+	TArray<FWorkDesc> PreviousFrameWork;
+	const FSceneView* PreviousFrameView = nullptr;
+
+	static bool IsPreviousFrameView(const FSceneView* ThisFrameView, const FSceneView* PrevFrameView);
 
 	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
 
