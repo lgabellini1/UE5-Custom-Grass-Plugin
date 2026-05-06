@@ -349,9 +349,11 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->ViewOrigin			  = FVector4f(FLinearColor(Work.View->ViewMatrices.GetViewOrigin()));
 	Params->MaxRenderDistance	  = DataAssetProxy.MaxRenderDistance;
 	Params->HeightmapScaleBias    = Tile->HeightmapScaleBias;
-	Params->ComponentSizeQuads    = Tile->ComponentSizeQuads;
-	Params->SectionBaseX		  = Tile->SectionBase.X;
-	Params->SectionBaseY		  = Tile->SectionBase.Y;
+	Params->TileSizeInQuads		  = Tile->ComponentSizeQuads;
+	Params->LandscapeSizeInQuadsX = Tile->TotalSizeInQuads.X;
+	Params->LandscapeSizeInQuadsY = Tile->TotalSizeInQuads.Y;
+	Params->QuadOffsetFromOriginX = Tile->SectionBase.X;
+	Params->QuadOffsetFromOriginY = Tile->SectionBase.Y;
 	Params->LandscapeLocalToWorld = Tile->LocalToWorld;
 	Params->HeightmapTexture	  = GraphBuilder.CreateSRV(HeightmapRDG);
 	Params->HeightmapSampler   = Tile->HeightmapSampler;

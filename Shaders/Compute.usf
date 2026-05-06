@@ -36,9 +36,11 @@ float MaxRenderDistance;
 //{
 	float4 HeightmapScaleBias;
 
-	int ComponentSizeQuads;
-	int SectionBaseX;
-	int SectionBaseY;
+	int TileSizeInQuads;
+	int QuadOffsetFromOriginX;
+	int QuadOffsetFromOriginY;
+	int LandscapeSizeInQuadsX;
+	int LandscapeSizeInQuadsY;
 
 	float4x4 LandscapeLocalToWorld;
 //}
@@ -102,7 +104,7 @@ float SampleHeightmap(float2 UV)
 	float2 HeightmapScale = HeightmapScaleBias.xy;
 	float2 HeightmapBias  = HeightmapScaleBias.zw;
 
-	float2 LocalQuadPos = UV * ComponentSizeQuads;
+	float2 LocalQuadPos = UV * TileSizeInQuads;
 	float2 SampleUV = (LocalQuadPos + 0.5f) * HeightmapScale + HeightmapBias;
 	
 	// Heightmap uses a 32bit RGBA format,
@@ -118,11 +120,13 @@ float SampleHeightmap(float2 UV)
  */
 float3 GetAbsoluteWorldPos(float2 UV, float LocalHeight)
 {
+	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
+	
 	// Map position into local quad-space [0..NumQuads].
-	float2 LocalQuadPos = UV * ComponentSizeQuads;
+	float2 LocalQuadPos = UV * TileSizeInQuads;
 
 	// Rebase local tile position into local landscape position.
-	float2 GlobalQuadPos = LocalQuadPos + float2(SectionBaseX, SectionBaseY);
+	float2 GlobalQuadPos = LocalQuadPos + QuadOffsetFromOrigin;
 	float3 LocalPos = float3(GlobalQuadPos, LocalHeight);
 
 	return mul(float4(LocalPos, 1.0f), LandscapeLocalToWorld).xyz;
@@ -133,15 +137,15 @@ float2 ApplyJitter(float2 UV, uint Hash)
 {
 	uint RNGState = Hash;
 	
-	float CellSizeX = 1.0f / (float)InstanceCountPerTileX;
-	float CellSizeY = 1.0f / (float)InstanceCountPerTileY;
+	int2 InstanceCountPerTile = int2(InstanceCountPerTileX, InstanceCountPerTileY);
+	float2 CellSize = 1.0f / (float2)InstanceCountPerTile;
 
 	float2 Jitter = float2(
-		(FloatPCGHashState(RNGState) - 0.5f) * CellSizeX,
-		(FloatPCGHashState(RNGState) - 0.5f) * CellSizeY
+		(FloatPCGHashState(RNGState) - 0.5f) * CellSize.x,
+		(FloatPCGHashState(RNGState) - 0.5f) * CellSize.y
 	);
 	
-	return saturate(UV + Jitter);
+	return UV + Jitter;
 }
 
 float2 ComputeFacing(uint Hash, float2 ToClumpCenter)
@@ -180,15 +184,17 @@ float2 ComputeFacing(uint Hash, float2 ToClumpCenter)
 /**
  * Search for nearest clumping point for the grass blade at that
  * UV position, using Voronoi algorithm.
- * @param UV grass blade position in UV space
+ * @param GlobalUV grass blade position in global (landscape-wide) UV space
  * @return found clump center as a UV position
  */
-float2 FindNearestClumpPoint(float2 UV)
+float2 FindNearestClumpPoint(float2 GlobalUV)
 {
 	int GridSize = GrassParams_ClumpGridSize;
 	
-	float2 Cell = floor(UV * GridSize);
-	float2 LocalCoord = frac(UV * GridSize); // [0..1] position of the grass blade inside its cell
+	float2 Cell = floor(GlobalUV * GridSize);
+	
+	// [0..1] position of the grass blade inside its Voronoi cell
+	float2 LocalCoord = frac(GlobalUV * GridSize);
 
 	float2 NearestClumpCenter = float2(999, 999);
 	float NearestDistSq = 999999.0f;
@@ -202,7 +208,7 @@ float2 FindNearestClumpPoint(float2 UV)
 			float2 Neighbour = float2(i, j);
 			float2 CurrentCell = Cell + Neighbour;
 			
-			float FlatCellIndex = CurrentCell.x + CurrentCell.y * GridSize;
+			float FlatCellIndex = CurrentCell.x + CurrentCell.y * 65536.0f;
 			FlatCellIndex += 1000.0f; // Avoid negative uint seed
 
 			uint RNGState = PCGHash((uint)FlatCellIndex);
@@ -225,7 +231,7 @@ float2 FindNearestClumpPoint(float2 UV)
 		} 
 	}
 
-	return saturate((Cell + NearestClumpCenter) / float(GridSize));
+	return (Cell + NearestClumpCenter) / float(GridSize);
 }
 
 /**
@@ -237,7 +243,7 @@ float2 FindNearestClumpPoint(float2 UV)
  */
 float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 {
-	int HeightmapResolution = ComponentSizeQuads + 1;
+	int HeightmapResolution = TileSizeInQuads + 1;
 	float TexelSize = 1.0f / (float)HeightmapResolution;
 
 	float2 Dxy = LocalHeight - float2(
@@ -245,9 +251,9 @@ float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 		SampleHeightmap(UV + float2(0, TexelSize))
 	);
 
-	float2 QuadSize = float2(LandscapeLocalToWorld[0][0], LandscapeLocalToWorld[1][1]);
+	float2 QuadSizeInUnits = float2(LandscapeLocalToWorld[0][0], LandscapeLocalToWorld[1][1]);
 	
-	float3 LocalNormal = float3(Dxy / QuadSize, 1.0f);
+	float3 LocalNormal = float3(Dxy / QuadSizeInUnits, 1.0f);
 	
 	return normalize(mul((float3x3)LandscapeLocalToWorld, LocalNormal));
 }
@@ -255,23 +261,32 @@ float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 [numthreads(THREADS_X, THREADS_Y, 1)]
 void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
 {
-	uint Seed = DispatchThreadID.x + DispatchThreadID.y * (uint)InstanceCountPerTileX;
+	int2 InstanceCountPerTile = int2(InstanceCountPerTileX, InstanceCountPerTileY);
+	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
+	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
+	
+	int2 InstanceCountPerQuad = InstanceCountPerTile / TileSizeInQuads;
+
+	int2 GlobalInstancePos = QuadOffsetFromOrigin * InstanceCountPerQuad + (int2)DispatchThreadID.xy;
+
+	// Global seed: avoids repeating patterns across tiles
+	uint Seed = GlobalInstancePos.x + GlobalInstancePos.y * 0x10000;
 	
 	FGrassBladeData GrassBlade;
 	GrassBlade.Hash = PCGHash(Seed);
 	
-	float2 UVPosition = float2(
-		DispatchThreadID.x / (float)InstanceCountPerTileX,
-		DispatchThreadID.y / (float)InstanceCountPerTileY
-	);
+	float2 LocalUVPos = DispatchThreadID.xy / (float2)InstanceCountPerTile;
 	
-	float2 JitteredUV = ApplyJitter(UVPosition, GrassBlade.Hash);
+	float2 JitteredUV = ApplyJitter(LocalUVPos, GrassBlade.Hash);
+
+	// Same position as JitteredUV, but relative to the whole landscape
+	float2 GlobalUVPos = (QuadOffsetFromOrigin + JitteredUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads;
 	
-	float2 ClumpCenterUV = FindNearestClumpPoint(JitteredUV);
-	float2 ToClumpCenter = ClumpCenterUV - JitteredUV;
+	float2 ClumpCenterUV = FindNearestClumpPoint(GlobalUVPos);
+	float2 ToClumpCenter = (ClumpCenterUV - GlobalUVPos) * (LandscapeSizeInQuads / TileSizeInQuads);
 
 	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
-	float2 FinalUV = saturate(JitteredUV + ToClumpCenter * RandomClumpStrength);
+	float2 FinalUV = JitteredUV + ToClumpCenter * RandomClumpStrength;
 
 	float LandscapeLocalHeight = SampleHeightmap(FinalUV);
 	
@@ -284,9 +299,10 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 	GrassBlade.Tilt	  = RandomScaleValue(GrassParams_Tilt, 0.25f * GrassParams_RandTilt, GrassBlade.Hash);
 	GrassBlade.Bend	  = RandomScaleValue(GrassParams_Bend, 0.5f * GrassParams_RandBend, GrassBlade.Hash);
 
-	GrassBlade.TerrainNormal = ComputeTerrainNormalFromHeightmap(FinalUV, LandscapeLocalHeight);
+	GrassBlade.TerrainNormal = ComputeTerrainNormalFromHeightmap(saturate(FinalUV), LandscapeLocalHeight);
 	
 	bool IsCulled = TestInstanceCulling(GrassBlade);
+//	IsCulled |= or(JitteredUV < 0.0, JitteredUV > 1.0f);
 	
 	uint LaneIndex_Wave = WavePrefixCountBits(!IsCulled);
 	uint VisibleBladeCount_Wave = WaveActiveCountBits(!IsCulled);

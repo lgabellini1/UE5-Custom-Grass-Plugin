@@ -24,6 +24,8 @@ struct FProxyLandscapeData
 	
 	FIntPoint SectionBase;
 
+	FIntPoint TotalSizeInQuads;
+
 	FVector3f BoundingBox;
 	
 	FMatrix44f LocalToWorld;

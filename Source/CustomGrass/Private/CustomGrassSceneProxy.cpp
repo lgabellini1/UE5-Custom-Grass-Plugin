@@ -24,6 +24,10 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 	
 	TObjectPtr<const ULandscapeComponent> LandscapeTile = InComponent->GetLandscapeTile();
 	check(LandscapeTile);
+
+	FIntRect LandscapeExtent;
+	LandscapeTile->GetLandscapeInfo()->GetLandscapeExtent(LandscapeExtent);
+	FIntPoint TotalLandscapeQuads = LandscapeExtent.Max - LandscapeExtent.Min;
 	
 	// Maintaining a reference should be fine as it's a RHI resource,
 	// i.e. a render-thread resource. Same goes for sampler.
@@ -34,6 +38,7 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 	LandscapeData.SectionBase		 = FIntPoint(LandscapeTile->SectionBaseX, LandscapeTile->SectionBaseY);
 	LandscapeData.LocalToWorld		 = FMatrix44f(LandscapeTile->GetLandscapeActor()->GetActorTransform().ToMatrixWithScale());
 	LandscapeData.BoundingBox		 = FVector3f(LandscapeTile->Bounds.BoxExtent);
+	LandscapeData.TotalSizeInQuads	 = TotalLandscapeQuads;
 	
 	// @note: this code assumes that the landscape does not change at runtime, and
 	// it's position remains unchanged!
