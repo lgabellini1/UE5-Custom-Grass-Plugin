@@ -171,7 +171,7 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 		FRenderingResourceHandles& ResourceHandles = Work.ResourceHandles.Get();
 		ResourceHandles.InstanceData	 = TryGetSRV(InstanceDataBuffer);
 		ResourceHandles.IndirectDrawArgs = TryGetRHI(IndirectDrawArgsBuffer[i]);
-		ResourceHandles.TileOffset		 = i * GetInstanceCount(Work.LOD).X * GetInstanceCount(Work.LOD).Y;
+		ResourceHandles.TileOffset		 = i * GetInstanceCount(EGrassLOD::LOD0).X * GetInstanceCount(EGrassLOD::LOD0).Y;
 		
 		ResourceHandles.ViewSpaceCorrection		= DataAssetProxy.ViewSpaceCorrection;
 		ResourceHandles.ShortHeightThreshold	= DataAssetProxy.ShortHeightThreshold;
@@ -339,6 +339,7 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->TileIndex			  = TileIndex;
 	Params->InstanceCountPerTileX = GetInstanceCount(Work.LOD).X;
 	Params->InstanceCountPerTileY = GetInstanceCount(Work.LOD).Y;
+	Params->BufferRegionSize	  = GetInstanceCount(EGrassLOD::LOD0).X * GetInstanceCount(EGrassLOD::LOD0).Y;
 #if WITH_EDITOR
 	Params->ViewProjectionMatrix = bFrozenViewFrustum ? CachedViewFrustum :
 		FMatrix44f(Work.View->ViewMatrices.GetViewProjectionMatrix());

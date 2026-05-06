@@ -15,6 +15,12 @@ int TileIndex;
 int InstanceCountPerTileX;
 int InstanceCountPerTileY;
 
+/**
+ * Number of elements per buffer region.\n Corresponds to
+ * the total number of instances for the highest LOD.
+ */
+int BufferRegionSize;
+
 /* Updates on every view-change. */
 //cbuffer CameraData
 //{
@@ -296,7 +302,7 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 
 	// Broadcast of the value calculated at lane 0.
 	BufferWriteIndex = WaveReadLaneFirst(BufferWriteIndex);
-	BufferWriteIndex += LaneIndex_Wave + TileIndex * (InstanceCountPerTileX * InstanceCountPerTileY);
+	BufferWriteIndex += LaneIndex_Wave + TileIndex * BufferRegionSize;
 	
 	if (!IsCulled)
 	{

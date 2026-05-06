@@ -110,6 +110,7 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER(int32, TileIndex)
 		SHADER_PARAMETER(int32, InstanceCountPerTileX)
 		SHADER_PARAMETER(int32, InstanceCountPerTileY)
+		SHADER_PARAMETER(int32, BufferRegionSize)
 		SHADER_PARAMETER(FMatrix44f, ViewProjectionMatrix)
 		SHADER_PARAMETER(FVector4f, ViewOrigin)
 		SHADER_PARAMETER(float, MaxRenderDistance)
