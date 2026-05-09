@@ -19,6 +19,8 @@ IMPLEMENT_GLOBAL_SHADER(FInstanceGrassBladeCS, "/CustomShaders/Compute.usf", "CS
 
 IMPLEMENT_GLOBAL_SHADER(FInitIndirectDrawArgsCS, "/CustomShaders/Compute.usf", "CSInitIndirectDrawArgs", SF_Compute);
 
+IMPLEMENT_GLOBAL_SHADER(FPrecomputeGrassClumpsCS, "/CustomShaders/Compute.usf", "CSPrecomputeGrassClumps", SF_Compute);
+
 FCustomGrassRenderSystem::FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset)
 {
 	Height = { DataAsset->Height, DataAsset->RandomizeHeight };
@@ -59,6 +61,10 @@ struct FVolatileBuffers
 
 	TStaticArray<FRDGBufferRef, GMaxRenderedTiles> IndirectDrawArgs;
 	TStaticArray<FRDGBufferUAVRef, GMaxRenderedTiles> IndirectDrawArgsUAV;
+
+	TStaticArray<FRDGTextureRef, GMaxRenderedTiles> ClumpOwnershipTexture;
+	TStaticArray<FRDGTextureSRVRef, GMaxRenderedTiles> ClumpOwnershipTextureSRV;
+	TStaticArray<FRDGTextureUAVRef, GMaxRenderedTiles>  ClumpOwnershipTextureUAV;
 };
 
 FCustomGrassRenderSystem::FCustomGrassRenderSystem()
@@ -73,10 +79,13 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem()
 		{
 			InstanceDataBuffer = AllocatePooledBuffer(InstanceDataBufferDesc, TEXT("InstanceDataBuffer"));
 			
-			for (int32 i = 0; i < IndirectDrawArgsBuffer.Num(); i++)
+			for (int32 i = 0; i < GMaxRenderedTiles; i++)
 			{
 				IndirectDrawArgsBuffer[i] = AllocatePooledBuffer(IndirectDrawArgsDesc,
 					*FString::Printf(TEXT("IndirectDrawArgs_[%d]"), i));
+
+				ClumpOwnershipTexture[i] = AllocatePooledTexture(ClumpOwnershipTextureDesc,
+					*(FString::Printf(TEXT("ClumpOwnershipTexture_[%d]"), i)));
 			}
 
 			bResourcesInitialized = true;
@@ -94,14 +103,15 @@ FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
 	(
 		// Get ownership of buffers as 'this' will deterministically be destroyed
 		// (we are in the destructor) once this lambda runs.
-		[InstanceData = MoveTemp(InstanceDataBuffer),
-			IndirectDrawArgs = MoveTemp(IndirectDrawArgsBuffer)](FRHICommandListImmediate& RHICmdList) mutable
+		[InstanceData = MoveTemp(InstanceDataBuffer), IndirectDrawArgs = MoveTemp(IndirectDrawArgsBuffer),
+			ClumpOwnership = MoveTemp(ClumpOwnershipTexture)](FRHICommandListImmediate& RHICmdList) mutable
 		{
 			InstanceData.SafeRelease();
 
-			for (FRDGPooledBufferRef& Buffer : IndirectDrawArgs)
+			for (int32 i = 0; i < GMaxRenderedTiles; i++)
 			{
-				Buffer.SafeRelease();
+				IndirectDrawArgs[i].SafeRelease();
+				ClumpOwnership[i].SafeRelease();
 			}
 		}
 	);
@@ -186,6 +196,7 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 	{
 		FVolatileBuffers Buffers;
 		InitPerFrameResources(GraphBuilder, Buffers);
+		InitGrassParams();
 
 		SubmitWork(GraphBuilder, Buffers, QueuedWork);
 	}
@@ -232,6 +243,29 @@ FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThrea
 	);
 }
 
+void FCustomGrassRenderSystem::InitGrassParams()
+{
+	GrassParams.Height				= DataAssetProxy.Height.Val;
+	GrassParams.Width				= DataAssetProxy.Width.Val;
+	GrassParams.Tilt				= DataAssetProxy.Tilt.Val;
+	GrassParams.Bend				= DataAssetProxy.Bend.Val;
+	GrassParams.ClumpStrength		= DataAssetProxy.ClumpStrength.Val;
+	GrassParams.ClumpGridSize		= DataAssetProxy.ClumpGridSize;
+	GrassParams.ClumpFacingType		= static_cast<uint8>(DataAssetProxy.ClumpFacingType);
+	GrassParams.ClumpFacingStrength = DataAssetProxy.ClumpFacingStrength;
+
+	GrassParams.MaxHeight = GMaxGrassBladeHeight;
+	GrassParams.MaxWidth  = GMaxGrassBladeWidth;
+	GrassParams.MaxTilt	  = GMaxGrassBladeTilt;
+	GrassParams.MaxBend   = GMaxGrassBladeBend;
+
+	GrassParams.RandHeight		  = DataAssetProxy.Height.Random;
+	GrassParams.RandWidth		  = DataAssetProxy.Width.Random;
+	GrassParams.RandTilt		  = DataAssetProxy.Tilt.Random;
+	GrassParams.RandBend		  = DataAssetProxy.Bend.Random;
+	GrassParams.RandClumpStrength = DataAssetProxy.ClumpStrength.Random;
+}
+
 bool FCustomGrassRenderSystem::AddRenderingWork(const FSceneView* View,
 	const FProxyLandscapeData* LandscapeData,
 	const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
@@ -275,11 +309,53 @@ void FCustomGrassRenderSystem::SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBu
 	for (int32 i = 0; i < Work.Num(); i++)
 	{
 		const FWorkDesc& WorkDesc = Work[i];
+
+		if (bClumpTextureDirty)
+			AddComputePass_PrecomputeGrassClumps(GraphBuilder, WorkDesc, InBuffers, i);
 		
 		AddComputePass_InstanceGrassBlades(GraphBuilder, WorkDesc, InBuffers, i);
 		
 		AddComputePass_InitIndirectDrawArgs(GraphBuilder, WorkDesc, InBuffers, i);
 	}
+	
+	bClumpTextureDirty = false;
+}
+
+void FCustomGrassRenderSystem::AddComputePass_PrecomputeGrassClumps(
+	FRDGBuilder& GraphBuilder,
+	const FWorkDesc& Work,
+	const FVolatileBuffers& InBuffers,
+	int32 TileIndex) const
+{
+	check(IsInAnyRenderingThread());
+
+	const FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(Work.View->GetFeatureLevel());
+	const TShaderRef PrecomputeClumpsCS = TShaderMapRef<FPrecomputeGrassClumpsCS>(GlobalShaderMap);
+	const FProxyLandscapeData* Tile = Work.LandscapeData;
+
+	FPrecomputeGrassClumpsCS::FParameters* Params = GraphBuilder.AllocParameters<FPrecomputeGrassClumpsCS::FParameters>();
+	Params->OutClumpOwnershipTexture = InBuffers.ClumpOwnershipTextureUAV[TileIndex];
+	Params->TileSizeInQuads			 = Tile->ComponentSizeQuads;
+	Params->LandscapeSizeInQuadsX	 = Tile->TotalSizeInQuads.X;
+	Params->LandscapeSizeInQuadsY	 = Tile->TotalSizeInQuads.Y;
+	Params->QuadOffsetFromOriginX	 = Tile->SectionBase.X;
+	Params->QuadOffsetFromOriginY	 = Tile->SectionBase.Y;
+	Params->InstanceCountPerTileX	 = GetInstanceCount(Work.LOD).X;
+	Params->InstanceCountPerTileY	 = GetInstanceCount(Work.LOD).Y;
+	Params->GrassParams				 = GrassParams;
+
+	const FIntVector ThreadCount = FIntVector(GetInstanceCount(Work.LOD).X, GetInstanceCount(Work.LOD).Y, 1);
+	const FIntVector GroupCount  = FComputeShaderUtils::GetGroupCount(ThreadCount, 1);
+	FComputeShaderUtils::ValidateGroupCount(GroupCount);
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("PrecomputeGrassClumps"),
+		ERDGPassFlags::Compute,
+		PrecomputeClumpsCS,
+		Params,
+		GroupCount
+	);
 }
 
 void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
@@ -312,27 +388,6 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	}
 #endif
 
-	FGrassParams GrassParams;
-	GrassParams.Height				= DataAssetProxy.Height.Val;
-	GrassParams.Width				= DataAssetProxy.Width.Val;
-	GrassParams.Tilt				= DataAssetProxy.Tilt.Val;
-	GrassParams.Bend				= DataAssetProxy.Bend.Val;
-	GrassParams.ClumpStrength		= DataAssetProxy.ClumpStrength.Val;
-	GrassParams.ClumpGridSize		= DataAssetProxy.ClumpGridSize;
-	GrassParams.ClumpFacingType		= static_cast<uint8>(DataAssetProxy.ClumpFacingType);
-	GrassParams.ClumpFacingStrength = DataAssetProxy.ClumpFacingStrength;
-
-	GrassParams.MaxHeight = GMaxGrassBladeHeight;
-	GrassParams.MaxWidth  = GMaxGrassBladeWidth;
-	GrassParams.MaxTilt	  = GMaxGrassBladeTilt;
-	GrassParams.MaxBend   = GMaxGrassBladeBend;
-
-	GrassParams.RandHeight		  = DataAssetProxy.Height.Random;
-	GrassParams.RandWidth		  = DataAssetProxy.Width.Random;
-	GrassParams.RandTilt		  = DataAssetProxy.Tilt.Random;
-	GrassParams.RandBend		  = DataAssetProxy.Bend.Random;
-	GrassParams.RandClumpStrength = DataAssetProxy.ClumpStrength.Random;
-
 	FInstanceGrassBladeCS::FParameters* Params = GraphBuilder.AllocParameters<FInstanceGrassBladeCS::FParameters>();
 	Params->OutInstanceDataBuffer = InBuffers.InstanceDataBufferUAV;
 	Params->OutInstanceCounter	  = InBuffers.InstanceCounterUAV;
@@ -358,6 +413,7 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->HeightmapTexture	  = GraphBuilder.CreateSRV(HeightmapRDG);
 	Params->HeightmapSampler   = Tile->HeightmapSampler;
 	Params->GrassParams			  = GrassParams;
+	Params->ClumpOwnershipTexture = InBuffers.ClumpOwnershipTextureSRV[TileIndex];
 
 	const FIntVector ThreadCount = FIntVector(GetInstanceCount(Work.LOD).X, GetInstanceCount(Work.LOD).Y, 1); // Total thread count, split among groups
 	const int32 GroupSize 		 = FInstanceGrassBladeCS::GroupThreadCount.X;
@@ -433,6 +489,15 @@ void FCustomGrassRenderSystem::InitPerFrameResources(FRDGBuilder& GraphBuilder, 
 	{
 		OutBuffers.IndirectDrawArgs[i] = GraphBuilder.RegisterExternalBuffer(IndirectDrawArgsBuffer[i]);
 		OutBuffers.IndirectDrawArgsUAV[i] = GraphBuilder.CreateUAV(OutBuffers.IndirectDrawArgs[i]);
+	}
+
+	// Clump ownership texture
+
+	for (int32 i = 0; i < ClumpOwnershipTexture.Num(); i++)
+	{
+		OutBuffers.ClumpOwnershipTexture[i] = GraphBuilder.RegisterExternalTexture(ClumpOwnershipTexture[i]);
+		OutBuffers.ClumpOwnershipTextureSRV[i] = GraphBuilder.CreateSRV(OutBuffers.ClumpOwnershipTexture[i]);
+		OutBuffers.ClumpOwnershipTextureUAV[i] = GraphBuilder.CreateUAV(OutBuffers.ClumpOwnershipTexture[i]);
 	}
 }
 

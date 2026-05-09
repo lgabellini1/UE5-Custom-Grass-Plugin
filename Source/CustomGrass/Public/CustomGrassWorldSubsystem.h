@@ -124,6 +124,7 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, HeightmapTexture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, HeightmapSampler)
 		SHADER_PARAMETER_STRUCT(FGrassParams, GrassParams)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float2>, ClumpOwnershipTexture)
 	END_SHADER_PARAMETER_STRUCT()
 	
 	DECLARE_EXPORTED_GLOBAL_SHADER(FInstanceGrassBladeCS, );
@@ -171,6 +172,45 @@ public:
 };
 
 
+class FPrecomputeGrassClumpsCS : public FGlobalShader
+{
+	BEGIN_SHADER_PARAMETER_STRUCT(FPrecomputeGrassClumpsCSParams,)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutClumpOwnershipTexture)
+		SHADER_PARAMETER(int32, InstanceCountPerTileX)
+		SHADER_PARAMETER(int32, InstanceCountPerTileY)
+		SHADER_PARAMETER(int32, QuadOffsetFromOriginX)
+		SHADER_PARAMETER(int32, QuadOffsetFromOriginY)	
+		SHADER_PARAMETER(int32, LandscapeSizeInQuadsX)
+		SHADER_PARAMETER(int32, LandscapeSizeInQuadsY)
+		SHADER_PARAMETER(int32, TileSizeInQuads)
+		SHADER_PARAMETER_STRUCT(FGrassParams, GrassParams)
+	END_SHADER_PARAMETER_STRUCT()
+
+	DECLARE_EXPORTED_GLOBAL_SHADER(FPrecomputeGrassClumpsCS, );
+	using FParameters = FPrecomputeGrassClumpsCSParams;
+	SHADER_USE_PARAMETER_STRUCT(FPrecomputeGrassClumpsCS, FGlobalShader)
+
+public:
+	static inline const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
+	
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters,
+	FShaderCompilerEnvironment& Environment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, Environment);
+		
+		SET_SHADER_DEFINE(Environment, THREADS_X, GroupThreadCount.X);
+		SET_SHADER_DEFINE(Environment, THREADS_Y, GroupThreadCount.Y);
+	}
+};
+
+
+/* Render system */
+
 struct FWindParams
 {
 	FTextureRHIRef NoiseTexture;
@@ -204,7 +244,8 @@ class FCustomGrassRenderSystem
 {
 	friend class UCustomGrassWorldSubsystem;
 
-	using FRDGPooledBufferRef = TRefCountPtr<FRDGPooledBuffer>;
+	using FRDGPooledBufferRef  = TRefCountPtr<FRDGPooledBuffer>;
+	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
 	/** Rendering work uploaded by a proxy. */
 	struct FWorkDesc
@@ -277,6 +318,7 @@ protected:
 
 	bool bIsActive = false;
 	bool bResourcesInitialized = false;
+	bool bClumpTextureDirty = true;
 	
 	FCriticalSection AddRenderingWorkCS;
 	
@@ -315,12 +357,32 @@ protected:
 
 	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(
 		sizeof(uint32), GIndexedIndirectDrawArgsNum);
+
+	TStaticArray<FRDGPooledTextureRef, GMaxRenderedTiles> ClumpOwnershipTexture;
+
+	const FRDGTextureDesc ClumpOwnershipTextureDesc = FRDGTextureDesc::Create2D(
+		FIntPoint(GetInstanceCount(EGrassLOD::LOD0).X, GetInstanceCount(EGrassLOD::LOD0).Y),
+		EPixelFormat::PF_G32R32F,
+		FClearValueBinding::Black,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
 	
 	/**
 	 * Representation of the data asset as cached on the render-thread.
 	 */
 	FDataAssetProxy DataAssetProxy;
 
+	FGrassParams GrassParams;
+
+	void InitGrassParams();
+
+
+	void AddComputePass_PrecomputeGrassClumps(
+		FRDGBuilder& GraphBuilder,
+		const FWorkDesc& Work,
+		const FVolatileBuffers& InBuffers,
+		int32 TileIndex
+	) const;
 
 	/**
 	 * Dispatches a compute shader for instancing grass blade data

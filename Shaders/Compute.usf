@@ -50,9 +50,9 @@ SamplerState HeightmapSampler;
 
 //cbuffer GrassParams
 //{
-	float GrassParams_Height;
-	float GrassParams_RandHeight;
-	float GrassParams_MaxHeight;
+float GrassParams_Height;
+float GrassParams_RandHeight;
+float GrassParams_MaxHeight;
 
 float GrassParams_Width;
 float GrassParams_RandWidth;
@@ -75,6 +75,9 @@ float GrassParams_ClumpFacingStrength;
 int GrassParams_ClumpGridSize;
 //}
 
+Texture2D<float2> ClumpOwnershipTexture;
+
+float2 FindNearestClumpPoint(float2 GlobalUV);
 
 /**
  * Test a grass blade instance for frustum and distance culling.
@@ -182,59 +185,6 @@ float2 ComputeFacing(uint Hash, float2 ToClumpCenter)
 }
 
 /**
- * Search for nearest clumping point for the grass blade at that
- * UV position, using Voronoi algorithm.
- * @param GlobalUV grass blade position in global (landscape-wide) UV space
- * @return found clump center as a UV position
- */
-float2 FindNearestClumpPoint(float2 GlobalUV)
-{
-	int GridSize = GrassParams_ClumpGridSize;
-	
-	float2 Cell = floor(GlobalUV * GridSize);
-	
-	// [0..1] position of the grass blade inside its Voronoi cell
-	float2 LocalCoord = frac(GlobalUV * GridSize);
-
-	float2 NearestClumpCenter = float2(999, 999);
-	float NearestDistSq = 999999.0f;
-	
-	UNROLL
-	for (int i = -1; i <= 1; i++)
-	{
-		UNROLL
-		for (int j = -1; j <= 1; j++)
-		{
-			float2 Neighbour = float2(i, j);
-			float2 CurrentCell = Cell + Neighbour;
-			
-			float FlatCellIndex = CurrentCell.x + CurrentCell.y * 65536.0f;
-			FlatCellIndex += 1000.0f; // Avoid negative uint seed
-
-			uint RNGState = PCGHash((uint)FlatCellIndex);
-			
-			float2 Jitter = float2(
-				FloatPCGHashState(RNGState),
-				FloatPCGHashState(RNGState)
-			);
-
-			// Get a clump grid, in [-1..2], of 9 clump areas
-			float2 JitteredNeighbour = Neighbour + Jitter; 
-
-			float2 BladeToNeighbour = JitteredNeighbour - LocalCoord;
-			float BladeToNeighbourDistSq = dot(BladeToNeighbour, BladeToNeighbour);
-
-			float IsCloser = step(BladeToNeighbourDistSq, NearestDistSq);
-
-			NearestDistSq = lerp(NearestDistSq, BladeToNeighbourDistSq, IsCloser);
-			NearestClumpCenter = lerp(NearestClumpCenter, JitteredNeighbour, IsCloser);
-		} 
-	}
-
-	return (Cell + NearestClumpCenter) / float(GridSize);
-}
-
-/**
  * Sample neighbouring heightmap points to derive normal vector
  * at the specified location.
  * @param UV location to get the normal for
@@ -281,8 +231,10 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 
 	// Same position as JitteredUV, but relative to the whole landscape
 	float2 GlobalUVPos = (QuadOffsetFromOrigin + JitteredUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads;
+
+	int2 TexCoord = DispatchThreadID.xy * (int2(1024, 1024) / InstanceCountPerTile);
 	
-	float2 ClumpCenterUV = FindNearestClumpPoint(GlobalUVPos);
+	float2 ClumpCenterUV = ClumpOwnershipTexture.Load(int3(TexCoord, 0)).xy;
 	float2 ToClumpCenter = (ClumpCenterUV - GlobalUVPos) * (LandscapeSizeInQuads / TileSizeInQuads);
 
 	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
@@ -342,4 +294,76 @@ void CSInitIndirectDrawArgs()
 	OutIndirectDrawArgsBuffer[2] = 0; // StartIndexLocation
 	OutIndirectDrawArgsBuffer[3] = 0; // BaseVertexLocation
 	OutIndirectDrawArgsBuffer[4] = 0; // StartInstanceLocation
+}
+
+/* COMPUTE SHADER #3: precompute grass clump centers in texture. */
+
+RWTexture2D<float2> OutClumpOwnershipTexture;
+
+/**
+ * Search for nearest clumping point for the grass blade at that
+ * UV position, using Voronoi algorithm.
+ * @param GlobalUV grass blade position in global (landscape-wide) UV space
+ * @return found clump center as a UV position
+ */
+float2 FindNearestClumpPoint(float2 GlobalUV)
+{
+	int GridSize = GrassParams_ClumpGridSize;
+	
+	float2 Cell = floor(GlobalUV * GridSize);
+	
+	// [0..1] position of the grass blade inside its Voronoi cell
+	float2 LocalCoord = frac(GlobalUV * GridSize);
+
+	float2 NearestClumpCenter = float2(999, 999);
+	float NearestDistSq = 999999.0f;
+	
+	UNROLL
+	for (int i = -1; i <= 1; i++)
+	{
+		UNROLL
+		for (int j = -1; j <= 1; j++)
+		{
+			float2 Neighbour = float2(i, j);
+			float2 CurrentCell = Cell + Neighbour;
+
+			uint RNGState = PCGHash((uint)(CurrentCell.x + 1000u)
+				+ (uint)(CurrentCell.y + 1000u) * 65536u);
+
+			float2 Jitter = float2(
+				FloatPCGHashState(RNGState),
+				FloatPCGHashState(RNGState)
+			);
+
+			// Get a clump grid, in [-1..2], of 9 clump areas
+			float2 JitteredNeighbour = Neighbour + Jitter; 
+
+			float2 BladeToNeighbour = JitteredNeighbour - LocalCoord;
+			float BladeToNeighbourDistSq = dot(BladeToNeighbour, BladeToNeighbour);
+
+			float IsCloser = step(BladeToNeighbourDistSq, NearestDistSq);
+
+			NearestDistSq = lerp(NearestDistSq, BladeToNeighbourDistSq, IsCloser);
+			NearestClumpCenter = lerp(NearestClumpCenter, JitteredNeighbour, IsCloser);
+		} 
+	}
+
+	return (Cell + NearestClumpCenter) / float(GridSize);
+}
+
+[numthreads(THREADS_X, THREADS_Y, 1)]
+void CSPrecomputeGrassClumps(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
+{
+	int2 InstanceCountPerTile = int2(InstanceCountPerTileX, InstanceCountPerTileY);
+	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
+	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
+	
+	float2 LocalUVPos = DispatchThreadID.xy / (float2)InstanceCountPerTile;
+	
+	float2 GlobalUVPos = (QuadOffsetFromOrigin + LocalUVPos * TileSizeInQuads)
+		/ (float2)LandscapeSizeInQuads;
+
+	float2 ClumpCenterUV = FindNearestClumpPoint(GlobalUVPos);
+
+	OutClumpOwnershipTexture[DispatchThreadID.xy] = ClumpCenterUV;
 }
