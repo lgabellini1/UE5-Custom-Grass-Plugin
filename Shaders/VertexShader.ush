@@ -5,6 +5,7 @@
 
 StructuredBuffer<FGrassBladeDataPacked> InInstanceDataBuffer;
 int TileOffset;
+int GrassBladeVertexCount;
 
 /* Wind */
 

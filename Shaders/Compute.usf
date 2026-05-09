@@ -24,8 +24,8 @@ int BufferRegionSize;
 /* Updates on every view-change. */
 //cbuffer CameraData
 //{
-    float4 ViewOrigin;
-	float4x4 ViewProjectionMatrix;
+float4 ViewOrigin;
+float4x4 ViewProjectionMatrix;
 //}
 
 /** Used for culling far grass blades. */
@@ -34,15 +34,15 @@ float MaxRenderDistance;
 /* All landscape data (except the heightmap texture). */
 //cbuffer SceneLandscapeData
 //{
-	float4 HeightmapScaleBias;
+float4 HeightmapScaleBias;
 
-	int TileSizeInQuads;
-	int QuadOffsetFromOriginX;
-	int QuadOffsetFromOriginY;
-	int LandscapeSizeInQuadsX;
-	int LandscapeSizeInQuadsY;
+int TileSizeInQuads;
+int QuadOffsetFromOriginX;
+int QuadOffsetFromOriginY;
+int LandscapeSizeInQuadsX;
+int LandscapeSizeInQuadsY;
 
-	float4x4 LandscapeLocalToWorld;
+float4x4 LandscapeLocalToWorld;
 //}
 
 Texture2D<float4> HeightmapTexture;
@@ -54,25 +54,25 @@ SamplerState HeightmapSampler;
 	float GrassParams_RandHeight;
 	float GrassParams_MaxHeight;
 
- 	float GrassParams_Width;
-	float GrassParams_RandWidth;
-	float GrassParams_MaxWidth;
+float GrassParams_Width;
+float GrassParams_RandWidth;
+float GrassParams_MaxWidth;
 
-	float GrassParams_Tilt;
-	float GrassParams_RandTilt;
-	float GrassParams_MaxTilt;
+float GrassParams_Tilt;
+float GrassParams_RandTilt;
+float GrassParams_MaxTilt;
 
-	float GrassParams_Bend;
-	float GrassParams_RandBend;
-	float GrassParams_MaxBend;
+float GrassParams_Bend;
+float GrassParams_RandBend;
+float GrassParams_MaxBend;
 
-	float GrassParams_ClumpStrength;
-	float GrassParams_RandClumpStrength;
+float GrassParams_ClumpStrength;
+float GrassParams_RandClumpStrength;
 
-	uint GrassParams_ClumpFacingType;
-	float GrassParams_ClumpFacingStrength;
+uint GrassParams_ClumpFacingType;
+float GrassParams_ClumpFacingStrength;
 
-	int GrassParams_ClumpGridSize;
+int GrassParams_ClumpGridSize;
 //}
 
 
@@ -84,7 +84,7 @@ bool TestInstanceCulling(FGrassBladeData InstanceData)
 	float3 Center = InstanceData.Position + float3(0, 0, InstanceData.Height * 0.5f);
 	float Radius = InstanceData.Height * 0.5f;
 	
-	bool FrustumCulling = IsOutsideFrustum(Center, Radius);
+	bool FrustumCulling = IsOutsideFrustum(Center, Radius, ViewProjectionMatrix);
 
 	float3 Delta = InstanceData.Position - ViewOrigin.xyz;
 	bool DistanceCulling = dot(Delta, Delta) > MaxRenderDistance * MaxRenderDistance;
@@ -302,7 +302,6 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 	GrassBlade.TerrainNormal = ComputeTerrainNormalFromHeightmap(saturate(FinalUV), LandscapeLocalHeight);
 	
 	bool IsCulled = TestInstanceCulling(GrassBlade);
-//	IsCulled |= or(JitteredUV < 0.0, JitteredUV > 1.0f);
 	
 	uint LaneIndex_Wave = WavePrefixCountBits(!IsCulled);
 	uint VisibleBladeCount_Wave = WaveActiveCountBits(!IsCulled);
@@ -332,6 +331,8 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 Buffer<uint> InInstanceCounter;
 
 RWBuffer<uint> OutIndirectDrawArgsBuffer;
+
+int GrassBladeVertexCount;
 
 [numthreads(1, 1, 1)]
 void CSInitIndirectDrawArgs()

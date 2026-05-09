@@ -19,8 +19,6 @@ struct FGrassBladeDataPacked
 	uint TiltBend;
 };
 
-int GrassBladeVertexCount;
-
 /* Utilities */
 
 /** Taken from here: https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/ */
@@ -34,14 +32,14 @@ uint PCGHash(uint Seed)
 uint PCGHashState(inout uint RNGState)
 {
 	RNGState = RNGState * 747796405u + 2891336453u;
-	uint Word = ((State >> ((State >> 28u) + 4u)) ^ State) * 277803737u;
+	uint Word = ((RNGState >> ((RNGState >> 28u) + 4u)) ^ RNGState) * 277803737u;
 	return (Word >> 22u) ^ Word;
 }
 
 /** Normalized [0..1] version. */
 float FloatPCGHashState(inout uint RNGState)
 {
-	return float(PCGHash(RNGState)) / float(0xFFFFFFFFu);
+	return float(PCGHashState(RNGState)) / float(0xFFFFFFFFu);
 }
 
 /** Convert precomputed hash to a [0..1] float (without recalculation). */
@@ -72,7 +70,7 @@ float2 Rotate2DVec(float2 Vec, float Angle)
 	));
 }
 
-bool IsOutsideFrustum(float3 Center, float Radius)
+bool IsOutsideFrustum(float3 Center, float Radius, float4x4 ViewProjectionMatrix)
 {
 	float4 Clip = mul(float4(Center, 1.0f), ViewProjectionMatrix);
 
