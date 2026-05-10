@@ -37,14 +37,15 @@ FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
 FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
 	check(LandscapeTile);
-	const FBox& TileBox = LandscapeTile->Bounds.GetBox();
+	const FBox& TileBox = LandscapeTile->GetLandscapeInfo()->GetLoadedBounds();
 
 	const UCustomGrassSettings* Settings = GetDefault<UCustomGrassSettings>();
 	const UCustomGrassDataAsset* GrassDataAsset = Settings->GrassDataAsset.LoadSynchronous();
 
 	FBox ExpandedBox = TileBox;
-	float VerticalExpansion = GrassDataAsset ? GrassDataAsset->Height * 1.5f : 50.f;
-	ExpandedBox.Max.Z += VerticalExpansion;
+	float VerticalOffset = 100.f;
+	ExpandedBox.Max.Z += (GrassDataAsset ? GrassDataAsset->Height : 0.f) + VerticalOffset;
+	ExpandedBox.Min.Z -= VerticalOffset;
 	
 	return FBoxSphereBounds(ExpandedBox);
 }
