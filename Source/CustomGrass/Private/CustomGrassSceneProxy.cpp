@@ -2,6 +2,7 @@
 
 #include "CustomGrassSceneProxy.h"
 #include "CustomGrassPrimitiveComponent.h"
+#include "CustomGrassShadowProxyComponent.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
 #include "CustomGrassVertexFactory.h"
@@ -40,13 +41,10 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 	LandscapeData.BoundingBox		 = FVector3f(LandscapeTile->Bounds.BoxExtent);
 	LandscapeData.TotalSizeInQuads	 = TotalLandscapeQuads;
 	
+	LandscapeData.ShadowProxyPlaneHeight = InComponent->ShadowProxy->GetComponentTransform().GetLocation().Z;
+	
 	// @note: this code assumes that the landscape does not change at runtime, and
 	// it's position remains unchanged!
-
-	/*
-	bCastDynamicShadow = true;
-	bCastStaticShadow  = true;
-	*/
 }
 
 void FCustomGrassSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)

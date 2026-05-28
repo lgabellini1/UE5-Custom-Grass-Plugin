@@ -99,4 +99,16 @@ public:
 
 	UPROPERTY(EditAnywhere, Category="Rendering")
 	float MaxRenderDistance = 1000.f;
+
+	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	TObjectPtr<UMaterialInterface> ShadowProxyMaterial = nullptr;
+
+	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	bool bDebugShowProxyMesh = false;
+
+	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	float ZOffset = 20.f;
+
+	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	int32 ProxyResolution = 64;
 };

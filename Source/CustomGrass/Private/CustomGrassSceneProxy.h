@@ -29,6 +29,8 @@ struct FProxyLandscapeData
 	FVector3f BoundingBox;
 	
 	FMatrix44f LocalToWorld;
+
+	float ShadowProxyPlaneHeight;
 };
 
 FVector GetTileCenter(const FProxyLandscapeData& LandscapeData);

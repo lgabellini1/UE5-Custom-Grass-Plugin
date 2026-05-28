@@ -7,12 +7,14 @@
 #include "ShaderParameterStruct.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 
+class ALandscape;
 struct FVolatileBuffers;
 struct FRenderingResourceHandles;
 struct FProxyLandscapeData;
 class UCustomGrassDataAsset;
 class ULandscapeComponent;
 class UCustomGrassPrimitiveComponent;
+class UCustomGrassShadowProxyComponent;
 class FCustomGrassSceneProxy;
 
 enum class EGrassLOD : uint8
@@ -54,6 +56,12 @@ static constexpr int32 GIndexedIndirectDrawArgsNum = 5;
  * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
  */
 static constexpr int32 GMaxRenderedTiles = 4;
+
+static const FIntPoint GShadowWPOTextureSlotRes = FIntPoint(512, 512);
+
+static constexpr int32 GShadowWPOAtlasGridSize  = GMaxRenderedTiles / 2;
+
+static const FIntPoint GShadowWPOAtlasRes		= GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize;
 
 
 /** Matches the homonymous struct in shader code. */
@@ -102,6 +110,14 @@ END_SHADER_PARAMETER_STRUCT()
 
 /* Compute shaders */
 
+struct FTileAtlasMapping
+{
+	int32 LandscapeCoordX;
+	int32 LandscapeCoordY;
+	int32 AtlasTileX;
+	int32 AtlasTileY;
+};
+
 class FInstanceGrassBladeCS : public FGlobalShader
 {
 	BEGIN_SHADER_PARAMETER_STRUCT(FInstanceGrassBladeCSParams,)
@@ -123,12 +139,20 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER(FMatrix44f, LandscapeLocalToWorld)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, HeightmapTexture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, HeightmapSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutShadowWPOTextureAtlas)
+		SHADER_PARAMETER(int32, AtlasOffsetX)
+		SHADER_PARAMETER(int32, AtlasOffsetY)
+		SHADER_PARAMETER(int32, AtlasSlotSize)
+		SHADER_PARAMETER(int32, AtlasGridSize)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FTileAtlasMapping>, TileAtlasMapping)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<uint>, OutDensityAccum)
+		SHADER_PARAMETER(float, ProxyZOffset)
 		SHADER_PARAMETER_STRUCT(FGrassParams, GrassParams)
 	END_SHADER_PARAMETER_STRUCT()
 	
 	DECLARE_EXPORTED_GLOBAL_SHADER(FInstanceGrassBladeCS, );
 	using FParameters = FInstanceGrassBladeCSParams;
-	SHADER_USE_PARAMETER_STRUCT(FInstanceGrassBladeCS, FGlobalShader)
+	SHADER_USE_PARAMETER_STRUCT(FInstanceGrassBladeCS, FGlobalShader);
 
 public:
 	static inline const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
@@ -161,7 +185,7 @@ class FInitIndirectDrawArgsCS : public FGlobalShader
 	
 	DECLARE_EXPORTED_GLOBAL_SHADER(FInitIndirectDrawArgsCS, );
 	using FParameters = FInitIndirectDrawArgsCSParams;
-	SHADER_USE_PARAMETER_STRUCT(FInitIndirectDrawArgsCS, FGlobalShader)
+	SHADER_USE_PARAMETER_STRUCT(FInitIndirectDrawArgsCS, FGlobalShader);
 
 public:
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
@@ -170,6 +194,40 @@ public:
 	}
 };
 
+class FResolveGrassDensityCS : public FGlobalShader
+{
+	BEGIN_SHADER_PARAMETER_STRUCT(FComputeGrassDensityCSParams,)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutShadowWPOTextureAtlas)
+		SHADER_PARAMETER(int32, AtlasOffsetX)
+		SHADER_PARAMETER(int32, AtlasOffsetY)
+		SHADER_PARAMETER(float, MaxExpectedDensity)
+		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<uint>, DensityAccum)
+	END_SHADER_PARAMETER_STRUCT()
+
+	DECLARE_EXPORTED_GLOBAL_SHADER(FResolveGrassDensityCS, );
+	using FParameters = FComputeGrassDensityCSParams;
+	SHADER_USE_PARAMETER_STRUCT(FResolveGrassDensityCS, FGlobalShader);
+
+public:
+	static inline const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
+	
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters,
+		FShaderCompilerEnvironment& Environment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, Environment);
+		
+		SET_SHADER_DEFINE(Environment, THREADS_X, GroupThreadCount.X);
+		SET_SHADER_DEFINE(Environment, THREADS_Y, GroupThreadCount.Y);
+	}
+};
+
+
+/* Render system */
 
 struct FWindParams
 {
@@ -204,7 +262,8 @@ class FCustomGrassRenderSystem
 {
 	friend class UCustomGrassWorldSubsystem;
 
-	using FRDGPooledBufferRef = TRefCountPtr<FRDGPooledBuffer>;
+	using FRDGPooledBufferRef  = TRefCountPtr<FRDGPooledBuffer>;
+	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
 	/** Rendering work uploaded by a proxy. */
 	struct FWorkDesc
@@ -245,6 +304,8 @@ class FCustomGrassRenderSystem
 		
 		float MaxRenderDistance;
 
+		float ShadowProxyZOffset;
+
 		FWindParams WindParams;
 
 		FDataAssetProxy() = default;
@@ -273,6 +334,12 @@ public:
 
 	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
 
+	/*void SetGrassDensityRTResource_RenderThread(const FTextureRenderTargetResource* RTResource);*/
+
+	void SetShadowWPOResource_RenderThread(const FTextureRenderTargetResource* RTResource);
+
+	/*void SetMaxDisplacement_RenderThread(float NewVal) { MaxDisplacement = NewVal; }*/
+
 protected:
 
 	bool bIsActive = false;
@@ -291,6 +358,8 @@ protected:
 	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
 
 	void InitPerFrameResources(FRDGBuilder& GraphBuilder, FVolatileBuffers& OutBuffers) const;
+
+	void InitGrassParams();
 	
 	static float CalcTileSortingScore(const FSceneView* View,
 		const FProxyLandscapeData& LandscapeData);
@@ -316,12 +385,30 @@ protected:
 	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(
 		sizeof(uint32), GIndexedIndirectDrawArgsNum);
 	
+	const FRDGTextureDesc DensityAccumAtlasDesc = FRDGTextureDesc::Create2D(
+		GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize,
+		PF_R16_UINT,
+		FClearValueBinding::Black,
+		TexCreate_ShaderResource | TexCreate_UAV
+	);
+
+	FRDGPooledTextureRef ShadowWPOTextureAtlas;
+
+	FRDGBufferRef TileAtlasMappingBuffer;
+	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder, const TArray<FWorkDesc>& Work);
+	
 	/**
 	 * Representation of the data asset as cached on the render-thread.
 	 */
 	FDataAssetProxy DataAssetProxy;
 
+	FGrassParams GrassParams;
+	
+	/** Cached heightmap SRVs for this frame. */
+	TStaticArray<FRDGTextureSRVRef, GMaxRenderedTiles> TileHeightmaps;
 
+	float MaxDisplacement;
+	
 	/**
 	 * Dispatches a compute shader for instancing grass blade data
 	 * in a whole landscape tile.\n
@@ -339,6 +426,13 @@ protected:
 	 * Dependencies: InstanceGrassBlades compute pass, for the instance count.
 	 */
 	void AddComputePass_InitIndirectDrawArgs(
+		FRDGBuilder& GraphBuilder,
+		const FWorkDesc& Work,
+		const FVolatileBuffers& InBuffers,
+		int32 TileIndex
+	) const;
+
+	void AddComputePass_ResolveGrassDensity(
 		FRDGBuilder& GraphBuilder,
 		const FWorkDesc& Work,
 		const FVolatileBuffers& InBuffers,
@@ -371,13 +465,35 @@ public:
 
 protected:
 	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
+
+/* Landscape */
+	
+	UPROPERTY()
+	TObjectPtr<ALandscape> LandscapeActor;
 	
 	UPROPERTY()
 	TArray<TObjectPtr<ULandscapeComponent>> LandscapeTiles;
+
+/* System components */
 	
 	UPROPERTY()
 	TArray<TObjectPtr<UCustomGrassPrimitiveComponent>> GrassTileComponents;
 
+	UPROPERTY()
+	TArray<TObjectPtr<UCustomGrassShadowProxyComponent>> ShadowProxyComponents;
+
+/* Textures & materials */
+	
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> ShadowProxyMID;
+	
+	/*UPROPERTY()
+	TObjectPtr<UTextureRenderTarget2D> GrassDensityTextureAtlas;*/
+
+	UPROPERTY()
+	TObjectPtr<UTextureRenderTarget2D> ShadowWPOTextureAtlas;
+	
+	
 	void SpawnComponents();
 	void DespawnComponents();
 
@@ -389,9 +505,18 @@ protected:
 	
 	void OnCVarChanged(bool bNewValue);
 	void OnDataAssetChanged();
+	
+	void SetupShadowProxyMaterial();
 
 	/** Handles state change that causes system activation / deactivation. */
 	void RecomputeRunningState();
 
 	bool bIsActive = false;
 };
+
+
+FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape);
+
+/*
+float GetMaxDisplacement(const ALandscape* Landscape);
+*/

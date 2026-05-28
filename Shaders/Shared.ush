@@ -19,6 +19,14 @@ struct FGrassBladeDataPacked
 	uint TiltBend;
 };
 
+struct FTileAtlasMapping
+{
+	int LandscapeCoordX;
+	int LandscapeCoordY;
+	int AtlasTileX;
+	int AtlasTileY;
+};
+
 /* Utilities */
 
 /** Taken from here: https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/ */
@@ -171,7 +179,7 @@ float3 UnpackNormal(uint PackedFacingNormal)
 
 	float3 N = float3(P, 1.0 - abs(P.x) - abs(P.y));
 	float T = saturate(-N.z);
-	N.xy += N.xy >= 0.0 ? -T : T;
+	N.xy += select(N.xy >= 0., -T, T);
 	
 	return normalize(N);
 }

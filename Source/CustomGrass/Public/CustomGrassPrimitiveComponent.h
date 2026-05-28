@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "CustomGrassPrimitiveComponent.generated.h"
 
+class UCustomGrassShadowProxyComponent;
 class ULandscapeComponent;
 
 UCLASS()
@@ -25,6 +26,9 @@ public:
 
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials,
 		bool bGetDebugMaterials = false) const override;
+
+	UPROPERTY()
+	TObjectPtr<UCustomGrassShadowProxyComponent> ShadowProxy;
 
 protected:
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;

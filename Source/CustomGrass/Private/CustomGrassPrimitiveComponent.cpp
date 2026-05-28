@@ -11,14 +11,9 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 {
 	PrimaryComponentTick.bCanEverTick = false;
 
-	/*
-	SetCastShadow(true);
-	bCastDynamicShadow = true;
-	bCastStaticShadow = true;
-	bUseAsOccluder = true;
-	*/
+	Mobility = EComponentMobility::Stationary;
 
-	Mobility = EComponentMobility::Static;
+	SetCastShadow(false);
 }
 
 void UCustomGrassPrimitiveComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
