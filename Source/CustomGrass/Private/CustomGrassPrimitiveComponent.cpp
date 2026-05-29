@@ -13,7 +13,9 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 
 	Mobility = EComponentMobility::Stationary;
 
-	SetCastShadow(false);
+	SetCastShadow(true);
+	bCastDynamicShadow = false;
+	SetCastContactShadow(true);
 }
 
 void UCustomGrassPrimitiveComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const

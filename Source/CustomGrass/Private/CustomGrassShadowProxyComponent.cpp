@@ -11,8 +11,9 @@ UCustomGrassShadowProxyComponent::UCustomGrassShadowProxyComponent(const FObject
 	SetVisibility(false);
 	
 	SetCastShadow(true);
-	bCastHiddenShadow = true;
-	bCastContactShadow = false;
+	SetCastHiddenShadow(true);
+	SetCastContactShadow(false);
+	bCastDynamicShadow = true;
 
 	// Let WPO cast shadows
 	bEvaluateWorldPositionOffset = true;
