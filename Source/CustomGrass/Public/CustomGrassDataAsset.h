@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Shared.h"
 #include "CustomGrassDataAsset.generated.h"
 
 UENUM(BlueprintType)
@@ -15,12 +16,9 @@ enum class EClumpFacingType : uint8
 };
 
 static constexpr float GMaxGrassBladeHeight = 50.f;
-
-static constexpr float GMaxGrassBladeWidth = 2.f;
-
-static constexpr float GMaxGrassBladeTilt = 10.f;
-
-static constexpr float GMaxGrassBladeBend = 10.f;
+static constexpr float GMaxGrassBladeWidth  = 2.f;
+static constexpr float GMaxGrassBladeTilt   = 10.f;
+static constexpr float GMaxGrassBladeBend   = 10.f;
 
 UCLASS()
 class UCustomGrassDataAsset : public UDataAsset
@@ -28,8 +26,8 @@ class UCustomGrassDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, Category="Material")
-	TObjectPtr<UMaterialInterface> Material = nullptr;
+	UPROPERTY(EditAnywhere, Category="Appearance")
+	TObjectPtr<UMaterialInterface> GrassMaterial = nullptr;
 
 	// "ClampMax" value must match "GMaxGrassBladeHeight"!
 	UPROPERTY(EditAnywhere, Category="Appearance", meta=(ClampMin="0.0", ClampMax="50.0"))
@@ -60,19 +58,19 @@ public:
 	float RandomizeBend = 0.f;
 
 	
-	UPROPERTY(EditAnywhere, Category="Appearance | Clumps", Meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", Meta=(ClampMin="0.0", ClampMax="1.0"))
 	float ClumpStrength = 0.085f;
 
-	UPROPERTY(EditAnywhere, Category="Appearance | Clumps", meta=(ClampMin="0.0", ClampMax="1.0"))
+	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float RandomizeClumpStrength = 0.f;
 
-	UPROPERTY(EditAnywhere, Category="Appearance | Clumps", Meta=(ClampMin="0"))
+	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", Meta=(ClampMin="0"))
 	int ClumpGridSize = 25;
 
-	UPROPERTY(EditAnywhere, Category="Appearance | Clumps")
+	UPROPERTY(EditAnywhere, Category="Appearance|Clumps")
 	EClumpFacingType ClumpFacingType;
 	
-	UPROPERTY(EditAnywhere, Category="Appearance | Clumps", meta=(ClampMin="0.0", ClampMax="1.0",
+	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", meta=(ClampMin="0.0", ClampMax="1.0",
 		EditCondition="ClumpFacingType != EClumpFacingType::NoClumpFacing"))
 	float ClumpFacingStrength;
 
@@ -81,13 +79,13 @@ public:
 	float ShortHeightThreshold = 0.f;
 
 	
-	UPROPERTY(EditAnywhere, Category="Appearance | Wind", DisplayName="Animation Texture")
+	UPROPERTY(EditAnywhere, Category="Appearance|Wind", DisplayName="Animation Texture")
 	TObjectPtr<UTexture2D> NoiseTexture = nullptr;
 
-	UPROPERTY(EditAnywhere, Category="Appearance | Wind", DisplayName="Direction")
+	UPROPERTY(EditAnywhere, Category="Appearance|Wind", DisplayName="Direction")
 	FVector2f WindDirection = FVector2f::ZeroVector;
 	
-	UPROPERTY(EditAnywhere, Category="Appearance | Wind", meta=(ClampMin="0"), DisplayName="Strength")
+	UPROPERTY(EditAnywhere, Category="Appearance|Wind", meta=(ClampMin="0"), DisplayName="Strength")
 	float WindStrength = 0.f;
 
 	
@@ -100,15 +98,29 @@ public:
 	UPROPERTY(EditAnywhere, Category="Rendering")
 	float MaxRenderDistance = 1000.f;
 
-	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	UPROPERTY(EditAnywhere,	Category="Rendering", DisplayName="Grass Material (No TwoSided)")
+	TObjectPtr<UMaterialInterface> GrassMaterial_NoTwoSided = nullptr;
+
+	UPROPERTY(EditAnywhere, Category="Rendering")
+	bool bManualLOD = false;
+
+	UPROPERTY(EditAnywhere, Category="Rendering", meta=(
+		EditCondition="bManualLOD == true"))
+	EGrassLOD GrassLOD = EGrassLOD::LOD0;
+	
+	
+	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
+	bool bShadowsEnabled = true;
+
+	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
 	TObjectPtr<UMaterialInterface> ShadowProxyMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
 	bool bDebugShowProxyMesh = false;
 
-	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
 	float ZOffset = 20.f;
 
-	UPROPERTY(EditAnywhere, Category="Rendering | Shadows")
+	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
 	int32 ProxyResolution = 64;
 };

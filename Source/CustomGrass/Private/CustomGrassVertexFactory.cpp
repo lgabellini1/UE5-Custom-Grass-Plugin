@@ -91,6 +91,7 @@ void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& Para
 	InstanceDataBuffer.Bind(ParameterMap, TEXT("InInstanceDataBuffer"));
 	TileOffset.Bind(ParameterMap, TEXT("TileOffset"));
 	GrassBladeVertexCount.Bind(ParameterMap, TEXT("GrassBladeVertexCount"));
+	LOD.Bind(ParameterMap, TEXT("LOD"));
 	
 	NoiseTexture.Bind(ParameterMap, TEXT("NoiseTexture"));
 	NoiseSampler.Bind(ParameterMap, TEXT("NoiseSampler"));
@@ -132,6 +133,7 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(InstanceDataBuffer, Handles->InstanceData);
 	ShaderBindings.Add(TileOffset, Handles->TileOffset);
 	ShaderBindings.Add(GrassBladeVertexCount, GetGrassBladeVertexCount(BatchUserData->LOD));
+	ShaderBindings.Add(LOD, static_cast<int32>(BatchUserData->LOD));
 
 	ShaderBindings.Add(MaxGrassHeight, GMaxGrassBladeHeight);
 	ShaderBindings.Add(MaxGrassWidth, GMaxGrassBladeWidth);

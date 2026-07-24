@@ -9,18 +9,21 @@
 #include "RenderGraphUtils.h"
 
 FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent* InComponent,
-                                               FCustomGrassRenderSystem* InRenderSystem)
-: FPrimitiveSceneProxy(InComponent, TEXT("CustomGrassTileProxy")), RenderSystem(InRenderSystem)
+                                               FCustomGrassRenderSystem* InRenderSystem, int32 Index)
+: FPrimitiveSceneProxy(InComponent,
+	FName(FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(Index) + FString(TEXT("]")))),
+	TileIndex(Index), RenderSystem(InRenderSystem)
 {
-	if (const UMaterialInterface* Material = InComponent->Material;
-		!ensure(Material))
+	if (!ensure(InComponent->Material) || !ensure(InComponent->Material_NoTwoSide))
 	{
 		UE_LOG(LogTemp, Error, TEXT("CustomGrass: Material is NULL!"));
 	}
 	else
 	{
-		MaterialProxy = Material->GetRenderProxy();
-		MaterialRelevance = Material->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
+		MaterialConfig.MaterialProxy	 = InComponent->Material->GetRenderProxy();
+		MaterialConfig.MaterialRelevance = InComponent->Material->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
+		NoTwoSideMaterialConfig.MaterialProxy	  = InComponent->Material_NoTwoSide->GetRenderProxy();
+		NoTwoSideMaterialConfig.MaterialRelevance = InComponent->Material_NoTwoSide->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
 	}
 	
 	TObjectPtr<const ULandscapeComponent> LandscapeTile = InComponent->GetLandscapeTile();
@@ -82,7 +85,8 @@ FPrimitiveViewRelevance FCustomGrassSceneProxy::GetViewRelevance(const FSceneVie
 	Relevance.bTranslucentSelfShadow = false;
 	Relevance.bVelocityRelevance	 = false;
 	
-	MaterialRelevance.SetPrimitiveViewRelevance(Relevance);
+	MaterialConfig.MaterialRelevance.SetPrimitiveViewRelevance(Relevance);
+//	NoTwoSideMaterialConfig.MaterialRelevance.SetPrimitiveViewRelevance(Relevance);
 	return Relevance;
 }
 
@@ -100,14 +104,29 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 		{
 			const FSceneView* View = Views[ViewIndex];
 
+			// Will be assigned by render system
 			EGrassLOD LOD;
-			bool bWillRender = RenderSystem->AddRenderingWork(View, &LandscapeData,
+			
+			RenderSystem->AddRenderingWork(View, &LandscapeData,
 				ResourceHandles.ToSharedRef(), this, LOD);
-			if (!bWillRender)
-				continue;
+
+			if (FrameStamp != GFrameCounterRenderThread)
+				break;
+			
+			CachedLOD.store(LOD);
+
+#if DEBUG_LOG_TILE_LOD
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(0, 1.0f, FColor::Yellow,
+					*FString::Printf(TEXT("GrassTile LOD: %i"), static_cast<int32>(LOD)));
+			}
+#endif
 
 			FMeshBatch& Mesh = Collector.AllocateMesh();
-			Mesh.MaterialRenderProxy = MaterialProxy;
+			Mesh.MaterialRenderProxy = static_cast<int32>(LOD) < 2
+				? MaterialConfig.MaterialProxy
+				: NoTwoSideMaterialConfig.MaterialProxy;
 			Mesh.VertexFactory = VertexFactory;
 			Mesh.Type = PT_TriangleStrip;
 
@@ -148,6 +167,7 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 			VSParams->ShortHeightThreshold = ResourceHandles->ShortHeightThreshold;
 			*/
 
+			check(BatchElement.IndexBuffer);
 			Collector.AddMesh(ViewIndex, Mesh);			
 		}
 	}

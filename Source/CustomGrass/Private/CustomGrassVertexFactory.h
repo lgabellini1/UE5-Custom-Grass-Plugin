@@ -13,7 +13,7 @@ class FCustomGrassIndexBuffer : public FIndexBuffer
 {
 public:
 	explicit FCustomGrassIndexBuffer(EGrassLOD LOD)
-	: LOD(LOD), NumIndices(GetGrassBladeVertexCount(LOD))
+	: LOD(LOD), NumIndices(GetGrassBladeIndicesCount(LOD))
 	{}
 	
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
@@ -110,38 +110,28 @@ public:
 
 protected:
 	LAYOUT_FIELD(FShaderResourceParameter, InstanceDataBuffer);
-
 	LAYOUT_FIELD(FShaderParameter, TileOffset);
-
 	LAYOUT_FIELD(FShaderParameter, GrassBladeVertexCount);
+	LAYOUT_FIELD(FShaderParameter, LOD);
 
 	/* Wind parameters */
 	
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseTexture);
-	
 	LAYOUT_FIELD(FShaderResourceParameter, NoiseSampler);
-	
 	LAYOUT_FIELD(FShaderParameter, WindDirection);
-	
 	LAYOUT_FIELD(FShaderParameter, WindStrength);
-	
 	LAYOUT_FIELD(FShaderParameter, Time);
 
 	/* Thresholds */
 
 	LAYOUT_FIELD(FShaderParameter, MaxGrassHeight);
-
 	LAYOUT_FIELD(FShaderParameter, MaxGrassWidth);
-
 	LAYOUT_FIELD(FShaderParameter, MaxGrassTilt);
-
 	LAYOUT_FIELD(FShaderParameter, MaxGrassBend);
 
 	/* Others */
 
 	LAYOUT_FIELD(FShaderParameter, ViewSpaceCorrection);
-
 	LAYOUT_FIELD(FShaderParameter, NormalRoundnessStrength);
-
 	LAYOUT_FIELD(FShaderParameter, ShortHeightThreshold);
 };

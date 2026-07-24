@@ -18,9 +18,15 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 	SetCastContactShadow(true);
 }
 
+void UCustomGrassPrimitiveComponent::OnComponentCreated()
+{
+	SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
 void UCustomGrassPrimitiveComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
 {
 	OutMaterials.Add(Material);
+	OutMaterials.Add(Material_NoTwoSide);
 }
 
 FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
@@ -28,7 +34,7 @@ FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
 	const auto* WorldSubsystem = GetWorld()->GetSubsystem<UCustomGrassWorldSubsystem>();
 	check(WorldSubsystem);
 	
-	return new FCustomGrassSceneProxy(this, WorldSubsystem->GetRenderSystem());
+	return new FCustomGrassSceneProxy(this, WorldSubsystem->GetRenderSystem(), Index);
 }
 
 FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& LocalToWorld) const

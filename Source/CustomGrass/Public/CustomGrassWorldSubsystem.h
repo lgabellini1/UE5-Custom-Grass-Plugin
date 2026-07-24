@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Shared.h"
 #include "CustomGrassDataAsset.h"
 #include "ShaderParameterStruct.h"
 #include "CustomGrassWorldSubsystem.generated.h"
@@ -17,33 +18,27 @@ class UCustomGrassPrimitiveComponent;
 class UCustomGrassShadowProxyComponent;
 class FCustomGrassSceneProxy;
 
-enum class EGrassLOD : uint8
-{
-	LOD0,
-	LOD1,
-	NumLODs
-};
-
-struct FLODSettings
-{
-	int32 VertexCount;
-	FIntPoint InstanceCount;
-	float DistanceThreshold;
-};
+#define DEBUG_DRAW_TILE_BOUNDS false
+#define DEBUG_LOG_TILE_LOD false
+#define DEBUG_RENDERED_TILES true
 
 /* Globals */
 
 constexpr int32 GNumLODs = static_cast<int32>(EGrassLOD::NumLODs);
 
-const auto LOD0Settings = FLODSettings(15, FIntPoint(1024, 1024), 0.f);
-	const auto LOD1Settings = FLODSettings(7, FIntPoint(512, 512), 200.f);
+const auto LOD0Settings = FLODSettings(15, FIntPoint(1024, 1024), 100.f);
+const auto LOD1Settings = FLODSettings(7, FIntPoint(1024, 1024), 200.f);
+const auto LOD2Settings = FLODSettings(7, FIntPoint(512, 512), FLT_MAX);
 
 const auto GLODSettingsMap = TMap<EGrassLOD, FLODSettings>({
 	{EGrassLOD::LOD0, LOD0Settings},
-	{EGrassLOD::LOD1, LOD1Settings}}
+	{EGrassLOD::LOD1, LOD1Settings},
+	{EGrassLOD::LOD2, LOD2Settings}}
 );
 
 inline int32 GetGrassBladeVertexCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].VertexCount; }
+inline int32 GetGrassBladeTriangleCount(EGrassLOD LOD) { return GetGrassBladeVertexCount(LOD) - 2; }
+inline int32 GetGrassBladeIndicesCount(EGrassLOD LOD) { return GetGrassBladeTriangleCount(LOD) + 2; }
 
 inline FIntPoint GetInstanceCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].InstanceCount; }
 
@@ -59,9 +54,8 @@ static constexpr int32 GMaxRenderedTiles = 4;
 
 static const FIntPoint GShadowWPOTextureSlotRes = FIntPoint(512, 512);
 
-static constexpr int32 GShadowWPOAtlasGridSize  = GMaxRenderedTiles / 2;
-
-static const FIntPoint GShadowWPOAtlasRes		= GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize;
+static constexpr int32 GShadowWPOAtlasGridSize = GMaxRenderedTiles / 2;
+static const FIntPoint GShadowWPOAtlasRes = GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize;
 
 
 /** Matches the homonymous struct in shader code. */
@@ -139,6 +133,7 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER(FMatrix44f, LandscapeLocalToWorld)
 		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, HeightmapTexture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, HeightmapSampler)
+		SHADER_PARAMETER(int32, bShadowsOn)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutShadowWPOTextureAtlas)
 		SHADER_PARAMETER(int32, AtlasOffsetX)
 		SHADER_PARAMETER(int32, AtlasOffsetY)
@@ -194,38 +189,6 @@ public:
 	}
 };
 
-class FResolveGrassDensityCS : public FGlobalShader
-{
-	BEGIN_SHADER_PARAMETER_STRUCT(FComputeGrassDensityCSParams,)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutShadowWPOTextureAtlas)
-		SHADER_PARAMETER(int32, AtlasOffsetX)
-		SHADER_PARAMETER(int32, AtlasOffsetY)
-		SHADER_PARAMETER(float, MaxExpectedDensity)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<uint>, DensityAccum)
-	END_SHADER_PARAMETER_STRUCT()
-
-	DECLARE_EXPORTED_GLOBAL_SHADER(FResolveGrassDensityCS, );
-	using FParameters = FComputeGrassDensityCSParams;
-	SHADER_USE_PARAMETER_STRUCT(FResolveGrassDensityCS, FGlobalShader);
-
-public:
-	static inline const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
-	
-	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
-	{
-		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
-	}
-
-	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters,
-		FShaderCompilerEnvironment& Environment)
-	{
-		FGlobalShader::ModifyCompilationEnvironment(Parameters, Environment);
-		
-		SET_SHADER_DEFINE(Environment, THREADS_X, GroupThreadCount.X);
-		SET_SHADER_DEFINE(Environment, THREADS_Y, GroupThreadCount.Y);
-	}
-};
-
 
 /* Render system */
 
@@ -238,26 +201,6 @@ struct FWindParams
 	float Time;
 };
 
-/**
- * Static references to resources needed by proxy for
- * rendering. The memory these refs point to is expected to be
- * completely handled by the render system.
- */
-struct FRenderingResourceHandles
-{
-	FShaderResourceViewRHIRef InstanceData;
-	FBufferRHIRef IndirectDrawArgs;
-	int32 TileOffset;
-	float ViewSpaceCorrection;
-	float NormalRoundnessStrength;
-	float ShortHeightThreshold;
-
-	/*
-	FWindParams WindParams;
-	*/
-};
-
-
 class FCustomGrassRenderSystem
 {
 	friend class UCustomGrassWorldSubsystem;
@@ -268,15 +211,20 @@ class FCustomGrassRenderSystem
 	/** Rendering work uploaded by a proxy. */
 	struct FWorkDesc
 	{
-		const FSceneView* View;
-		const FProxyLandscapeData* LandscapeData;
+		const FVector ViewOrigin;
+		const FMatrix ViewMatrix;
+		const FProxyLandscapeData LandscapeData;
+		const FCustomGrassSceneProxy* GrassProxy;
 		const TSharedRef<FRenderingResourceHandles> ResourceHandles;
 		EGrassLOD LOD;
 		float SortingScore;
-
-		bool operator==(const FWorkDesc&) const
+		
+		int32 TileIndex; // for debug
+		
+		bool operator==(const FWorkDesc& Other) const
 		{
-			return (this->LandscapeData == LandscapeData) && (this->LOD == LOD);
+			return (LandscapeData.SectionBase == Other.LandscapeData.SectionBase)
+				&& (LOD == Other.LOD);
 		}
 	};
 
@@ -304,9 +252,13 @@ class FCustomGrassRenderSystem
 		
 		float MaxRenderDistance;
 
+		bool bShadowsOn;
 		float ShadowProxyZOffset;
 
 		FWindParams WindParams;
+
+		bool bManualLOD;
+		EGrassLOD GlobalLOD;
 
 		FDataAssetProxy() = default;
 		explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset);
@@ -326,7 +278,7 @@ public:
 	/**
 	 * Called by proxies to register themselves for rendering work.
 	 */ 
-	bool AddRenderingWork(const FSceneView* View, 
+	void AddRenderingWork(const FSceneView* View, 
 		const FProxyLandscapeData* LandscapeData,
 		const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
 		const FCustomGrassSceneProxy* Proxy,
@@ -344,6 +296,7 @@ protected:
 
 	bool bIsActive = false;
 	bool bResourcesInitialized = false;
+	bool bHasActiveSelection = false;
 	
 	FCriticalSection AddRenderingWorkCS;
 	
@@ -351,9 +304,9 @@ protected:
 	TArray<FWorkDesc> QueuedWork;
 
 	TArray<FWorkDesc> PreviousFrameWork;
-	const FSceneView* PreviousFrameView = nullptr;
+	FMatrix PreviousFrameViewMatrix;
 
-	static bool IsPreviousFrameView(const FSceneView* ThisFrameView, const FSceneView* PrevFrameView);
+	static bool IsPreviousFrameView(const FMatrix& ThisFrameView, const FMatrix& PrevFrameView);
 
 	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
 
@@ -431,13 +384,6 @@ protected:
 		const FVolatileBuffers& InBuffers,
 		int32 TileIndex
 	) const;
-
-	void AddComputePass_ResolveGrassDensity(
-		FRDGBuilder& GraphBuilder,
-		const FWorkDesc& Work,
-		const FVolatileBuffers& InBuffers,
-		int32 TileIndex
-	) const;
 };
 
 
@@ -486,9 +432,6 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> ShadowProxyMID;
-	
-	/*UPROPERTY()
-	TObjectPtr<UTextureRenderTarget2D> GrassDensityTextureAtlas;*/
 
 	UPROPERTY()
 	TObjectPtr<UTextureRenderTarget2D> ShadowWPOTextureAtlas;
@@ -514,9 +457,4 @@ protected:
 	bool bIsActive = false;
 };
 
-
 FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape);
-
-/*
-float GetMaxDisplacement(const ALandscape* Landscape);
-*/

@@ -3,35 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Shared.h"
 #include "CustomGrassWorldSubsystem.h"
 
 // struct FWindParams;
 class UCustomGrassPrimitiveComponent;
 class FCustomGrassRenderSystem;
 class FCustomGrassVertexFactory;
-
-/**
- * Landscape information needed for rendering. The proxy maintains a
- * copy of data originally stored by the ULandscapeComponent in the game thread.
- */
-struct FProxyLandscapeData
-{
-	FTextureRHIRef HeightmapTexture;
-	FSamplerStateRHIRef HeightmapSampler;
-	FVector4f HeightmapScaleBias;
-	
-	int32 ComponentSizeQuads;
-	
-	FIntPoint SectionBase;
-
-	FIntPoint TotalSizeInQuads;
-
-	FVector3f BoundingBox;
-	
-	FMatrix44f LocalToWorld;
-
-	float ShadowProxyPlaneHeight;
-};
 
 FVector GetTileCenter(const FProxyLandscapeData& LandscapeData);
 
@@ -44,7 +22,13 @@ class FCustomGrassSceneProxy final : public FPrimitiveSceneProxy
 {
 public:
 	FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent* InComponent,
-		FCustomGrassRenderSystem* InRenderSystem);
+		FCustomGrassRenderSystem* InRenderSystem, int32 Index);
+
+	EGrassLOD GetGrassLOD() const { return CachedLOD.load(); }
+
+	void StampNextFrame_RenderThread() const { FrameStamp = GFrameCounterRenderThread + 1; }
+
+	const int32 TileIndex;
 
 protected:
 	virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
@@ -62,16 +46,26 @@ protected:
 	virtual uint32 GetMemoryFootprint() const override;
 
 	
+	// Last frame where this grass tile was selected for rendering.
+	mutable uint64 FrameStamp = MAX_uint64;
+	
 	FCustomGrassRenderSystem* RenderSystem;
 
 	TSharedPtr<FRenderingResourceHandles, ESPMode::ThreadSafe> ResourceHandles;
 
+	// 'mutable' allows to cache it in GetDynamicMeshElements() (to elude const)
+	mutable std::atomic<EGrassLOD> CachedLOD = EGrassLOD::NumLODs;
+
 	/** Render-thread copy of landscape data useful to shaders. */
 	FProxyLandscapeData LandscapeData;
-
 	
 	FCustomGrassVertexFactory* VertexFactory;
 	
-	FMaterialRenderProxy* MaterialProxy;
-	FMaterialRelevance MaterialRelevance;
+	struct FMaterialConfig
+	{
+		FMaterialRenderProxy* MaterialProxy;
+		FMaterialRelevance MaterialRelevance;
+	};
+
+	FMaterialConfig MaterialConfig, NoTwoSideMaterialConfig;
 };

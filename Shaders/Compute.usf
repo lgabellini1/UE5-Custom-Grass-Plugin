@@ -78,6 +78,8 @@ int GrassParams_ClumpGridSize;
 
 // ------------- Shadow parameters --------------------
 
+int bShadowsOn;
+
 RWTexture2D<float2> OutShadowWPOTextureAtlas;
 
 StructuredBuffer<FTileAtlasMapping> TileAtlasMapping;
@@ -279,76 +281,58 @@ float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 	return normalize(mul((float3x3)LandscapeLocalToWorld, LocalNormal));
 }
 
-void WriteToShadowWPO(uint3 DispatchThreadID, FGrassBladeData GrassBlade,
-	float2 GlobalFinalUV, float2 ClumpCenterUV)
+void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 {
-	int2 InstanceCountPerTile = int2(InstanceCountPerTileX, InstanceCountPerTileY);
+	if (!(bool)bShadowsOn) return;
+	
 	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
 	int2 LandscapeNumTiles	  = LandscapeSizeInQuads / TileSizeInQuads;
 	int2 AtlasOffset		  = int2(AtlasOffsetX, AtlasOffsetY);
 	
-	/* How "much" grass information is taken for each pixel the shadow maps: 2 instances, 4, etc...
-	   higher values mean a worse representation of the current grass conformation in the shadows. */
-	int2 GrassShadowResRatio = InstanceCountPerTile / AtlasSlotSize;
+	// Check if FinalUV (the jittered + clumped grass instance position) lies
+	// on a tile in memory.
+		
+	int2 TileCoord = floor(GlobalFinalUV * LandscapeNumTiles);
 
-	bool bIsWriteThread = all(Mod(DispatchThreadID.xy, (uint2)GrassShadowResRatio) == uint2(0, 0));
-
-	/*
-	// Step 1: write heightmap inside the texture (for a single tile)
-	if (bIsWriteThread)
+	uint NumElements;
+	uint Stride;
+	TileAtlasMapping.GetDimensions(NumElements, Stride);
+		
+	int2 AtlasSlot = int2(-1, -1);
+	for (int i = 0; i < NumElements; i++)
 	{
-		int2 WriteTexel = AtlasOffset + ((int2)DispatchThreadID.xy / GrassShadowResRatio);
-		
-		OutShadowWPOTextureAtlas[WriteTexel] = LandscapeAbsoluteHeight;
-	}
-	*/
-	
-	// Step 2: globally (meaning, among all tiles) offset by grass height, if present
-
-		// Check if FinalUV (the jittered + clumped grass instance position) lies
-		// on a tile in memory.
-		
-		int2 TileCoord = floor(GlobalFinalUV * LandscapeNumTiles);
-
-		uint NumElements;
-		uint Stride;
-		TileAtlasMapping.GetDimensions(NumElements, Stride);
-		
-		int2 AtlasSlot = int2(-1, -1);
-		for (int i = 0; i < NumElements; i++)
-		{
-			bool bTileFound = (TileAtlasMapping[i].LandscapeCoordX == TileCoord.x) &&
-				(TileAtlasMapping[i].LandscapeCoordY == TileCoord.y);
+		bool bTileFound = (TileAtlasMapping[i].LandscapeCoordX == TileCoord.x) &&
+			(TileAtlasMapping[i].LandscapeCoordY == TileCoord.y);
 				
-			if (bTileFound)
-			{
-				AtlasSlot = int2(TileAtlasMapping[i].AtlasTileX, TileAtlasMapping[i].AtlasTileY);
-				break;
-			}
-		}
-		
-		// If found...
-		if (AtlasSlot.x >= 0)
+		if (bTileFound)
 		{
-			float2 UVInTile = frac(GlobalFinalUV * LandscapeNumTiles);
-			float2 UVInAtlas = (AtlasSlot + UVInTile) / AtlasGridSize;
+			AtlasSlot = int2(TileAtlasMapping[i].AtlasTileX, TileAtlasMapping[i].AtlasTileY);
+			break;
+		}
+	}
+		
+	// If found...
+	if (AtlasSlot.x >= 0)
+	{
+		float2 UVInTile = frac(GlobalFinalUV * LandscapeNumTiles);
+		float2 UVInAtlas = (AtlasSlot + UVInTile) / AtlasGridSize;
 
-			int AtlasRes = AtlasSlotSize * AtlasGridSize;
-			int2 AtlasTexel = int2(UVInAtlas * AtlasRes);
+		int AtlasRes = AtlasSlotSize * AtlasGridSize;
+		int2 AtlasTexel = int2(UVInAtlas * AtlasRes);
 
-			float ShadowHeight = GrassBlade.Height + ProxyZOffset;
+		float ShadowHeight = GrassParams_MaxHeight + ProxyZOffset;
 
-			if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
-				OutShadowWPOTextureAtlas[AtlasTexel].r = ShadowHeight;
+		if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
+			OutShadowWPOTextureAtlas[AtlasTexel].r = ShadowHeight;
 
-			float CellSize	  = 1.0 / (float)(GrassParams_ClumpGridSize);
-			float DistToClump = length(GlobalFinalUV - ClumpCenterUV) / CellSize;
+		float CellSize	  = 1.0 / (float)(GrassParams_ClumpGridSize);
+		float DistToClump = length(GlobalFinalUV - ClumpCenterUV) / CellSize;
 
-			float Density = pow(saturate(1.0 - DistToClump), 2.0);
-			Density = lerp(0.5 * CellSize, Density, saturate(GrassParams_ClumpStrength));
+		float Density = pow(saturate(1.0 - DistToClump), 2.0);
+		Density = lerp(0.5 * CellSize, Density, saturate(GrassParams_ClumpStrength));
 
-			if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
-				OutShadowWPOTextureAtlas[AtlasTexel].g = Density;
+		if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
+			OutShadowWPOTextureAtlas[AtlasTexel].g = Density;
 	}
 }
 
@@ -381,7 +365,7 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 	float2 ToClumpCenter = (ClumpCenterUV - GlobalUVPos) * (LandscapeSizeInQuads / TileSizeInQuads);
 
 	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
-	float2 FinalUV = saturate(JitteredUV + ToClumpCenter * RandomClumpStrength);
+	float2 FinalUV = JitteredUV + ToClumpCenter * RandomClumpStrength;
 	float2 GlobalFinalUV = saturate((QuadOffsetFromOrigin + FinalUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads);
 
 	float LandscapeLocalHeight = SampleHeightmap(FinalUV);
@@ -397,9 +381,10 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 
 	GrassBlade.TerrainNormal = ComputeTerrainNormalFromHeightmap(saturate(FinalUV), LandscapeLocalHeight);
 
-	WriteToShadowWPO(DispatchThreadID, GrassBlade, GlobalFinalUV, ClumpCenterUV);
+	WriteToShadowWPO(GlobalFinalUV, ClumpCenterUV);
 	
 	bool IsCulled = TestInstanceCulling(GrassBlade);
+	IsCulled |= or(any(GlobalFinalUV > 1.f), any(GlobalFinalUV < 0.f));
 	
 	uint LaneIndex_Wave = WavePrefixCountBits(!IsCulled);
 	uint VisibleBladeCount_Wave = WaveActiveCountBits(!IsCulled);
@@ -441,66 +426,3 @@ void CSInitIndirectDrawArgs()
 	OutIndirectDrawArgsBuffer[3] = 0; // BaseVertexLocation
 	OutIndirectDrawArgsBuffer[4] = 0; // StartInstanceLocation
 }
-
-/* COMPUTE SHADER #3: resolve the grass density texture atlas. */
-
-/*
-RWTexture2D<float2> OutGrassDensityTextureAtlas;
-
-float PlaneHeight;
-
-float MaxDisplacement;
-
-[numthreads(THREADS_X, THREADS_Y, 1)]
-void CSComputeGrassDensity(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
-{
-	if (any((int2)DispatchThreadID.xy >= AtlasSlotSize)) return;
-	
-	int2 AtlasOffset		  = int2(AtlasOffsetX, AtlasOffsetY);
-	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
-	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
-	
-	int2 WriteTexel = AtlasOffset + (int2)DispatchThreadID.xy;
-
-	// + 0.5 to sample at texel centers
-	float2 LocalUV = ((float2)DispatchThreadID.xy + 0.5) / (float)AtlasSlotSize;
-	float2 GlobalUV = (QuadOffsetFromOrigin + LocalUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads;
-
-	float2 NearestClump = FindNearestClumpPoint(GlobalUV);
-
-	float CellSize = 1.0 / (float)GrassParams_ClumpGridSize;
-	float DistToClump = length(GlobalUV - NearestClump) / CellSize;
-
-	float Density = pow(saturate(1.0 - DistToClump), 2.0);
-	
-	// Lerp toward a neutral density rather than a magic 0.5
-	float NeutralDensity = 0.5 * CellSize; 
-	Density = lerp(NeutralDensity, Density, saturate(GrassParams_ClumpStrength));
-
-	float LandscapeHeight = SampleHeightmap(LocalUV); // LocalUV, not GlobalUV — SampleHeightmap expects tile-local UV
-	float WPO = PlaneHeight - (LandscapeHeight + GrassParams_MaxHeight);
-	float WPONormalized = saturate(WPO / MaxDisplacement);
-
-	OutGrassDensityTextureAtlas[WriteTexel] = float2(Density, WPONormalized);
-}
-
-Texture2D<uint> DensityAccum;
-
-float MaxExpectedDensity;
-
-[numthreads(THREADS_X, THREADS_Y, 1)]
-void CSResolveGrassDensity(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
-{
-	int2 AtlasOffset = int2(AtlasOffsetX, AtlasOffsetY);
-
-	int2 TexelPos = AtlasOffset + (int2)DispatchThreadID.xy;
-	uint RawAccum = DensityAccum[TexelPos];
-
-	float Density = saturate((float)RawAccum / MaxExpectedDensity);
-	
-	OutShadowWPOTextureAtlas[TexelPos].g = Density;
-}
-*/
-
-[numthreads(1, 1, 1)]
-void CSResolveGrassDensity() {}

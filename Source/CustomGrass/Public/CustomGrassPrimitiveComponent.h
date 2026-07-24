@@ -16,6 +16,10 @@ class UCustomGrassPrimitiveComponent : public UPrimitiveComponent
 public:
 	explicit UCustomGrassPrimitiveComponent(const FObjectInitializer& ObjectInitializer);
 
+	virtual void OnComponentCreated() override;
+
+	void SetIndex(int32 InIndex) { Index = InIndex; }
+
 	UPROPERTY()
 	TObjectPtr<const ULandscapeComponent> LandscapeTile;
 	
@@ -23,6 +27,9 @@ public:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> Material_NoTwoSide;
 
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials,
 		bool bGetDebugMaterials = false) const override;
@@ -34,4 +41,6 @@ protected:
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
+
+	int32 Index;
 };

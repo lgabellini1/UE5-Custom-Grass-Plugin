@@ -6,6 +6,7 @@
 StructuredBuffer<FGrassBladeDataPacked> InInstanceDataBuffer;
 int TileOffset;
 int GrassBladeVertexCount;
+int LOD;
 
 /* Wind */
 
@@ -130,6 +131,13 @@ void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCo
 	float Angle = IsMainBlade ? 0 : (HashUIntToFloat(GrassBlade.Hash ^ 0x9e3779b9u) - 0.5f) * (PI / 4.f) + PI;
 
 	float2 BladeFacing = IsMainBlade ? GrassBlade.Facing : Rotate2DVec(GrassBlade.Facing, Angle);
+	if (LOD >= 2)
+	{
+		// Make grass face the camera directly. This lets us avoid two-sided rendering,
+		// halving the vertices count for low LODs.
+		float3 ToCamera = normalize(DFHackToFloat(ResolvedView.WorldCameraOrigin) - GrassBlade.Position);
+		BladeFacing = ToCamera.xy;
+	}
 	
 	float3 OrthoNormal = float3(-BladeFacing.y, BladeFacing.x, 0.f);
 
@@ -143,7 +151,12 @@ void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCo
 	WorldPos = ComputeViewSpaceShift(WorldPos, IsTip, OffsetSign, LocalToWorld);
 
 	OutWorldPos	   = WorldPos;
-	OutWorldNormal = normalize(mul(RoundedNormals, LocalToWorld));
+	float3 WorldNormal = normalize(mul(RoundedNormals, LocalToWorld));
+
+	float3 TargetNormal = float3(0, 0, 1);
+	float3 BlendedNormal = normalize(lerp(WorldNormal, TargetNormal, RelativeHeight));
+
+	OutWorldNormal = mul(BlendedNormal, LocalToWorld);
 }
 
 void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
