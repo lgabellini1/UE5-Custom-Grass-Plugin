@@ -1,7 +1,5 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#include "CustomGrassSettings.h"
-#include "CustomGrass.h"
+﻿#include "CustomGrassSettings.h"
+#include "CustomGrassDataAsset.h"
 
 UCustomGrassSettings::UCustomGrassSettings()
 {
@@ -15,9 +13,10 @@ void UCustomGrassSettings::PostEditChangeProperty(FPropertyChangedEvent& Propert
 
 	if (PropertyChangedEvent.Property)
 	{
-		if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UCustomGrassSettings, GrassDataAsset))
+		if (PropertyChangedEvent.GetPropertyName() ==
+			GET_MEMBER_NAME_CHECKED(UCustomGrassSettings, GrassDataAsset))
 		{
-			OnGrassDataAssetLoadDelegate.Broadcast();
+			GrassDataAssetLoaded.Broadcast();
 		}
 	}
 }
