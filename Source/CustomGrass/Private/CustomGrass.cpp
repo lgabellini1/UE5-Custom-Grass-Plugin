@@ -13,8 +13,5 @@ void FCustomGrassModule::StartupModule()
 void FCustomGrassModule::ShutdownModule()
 {}
 
-FOnGrassDataAssetLoad OnGrassDataAssetLoadDelegate;
-
 #undef LOCTEXT_NAMESPACE
-	
 IMPLEMENT_MODULE(FCustomGrassModule, CustomGrass)

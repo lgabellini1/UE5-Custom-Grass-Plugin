@@ -20,6 +20,9 @@ static constexpr float GMaxGrassBladeWidth  = 2.f;
 static constexpr float GMaxGrassBladeTilt   = 10.f;
 static constexpr float GMaxGrassBladeBend   = 10.f;
 
+DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoaded);
+inline FOnGrassDataAssetLoaded GrassDataAssetLoaded;
+
 UCLASS()
 class UCustomGrassDataAsset : public UDataAsset
 {

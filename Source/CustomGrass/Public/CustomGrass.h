@@ -7,9 +7,3 @@ public:
 	
 	virtual void ShutdownModule() override;
 };
-
-
-/* Delegates */
-
-DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoad);
-extern FOnGrassDataAssetLoad OnGrassDataAssetLoadDelegate;
