@@ -15,11 +15,6 @@ enum class EClumpFacingType : uint8
 	OppositeClumpCenter
 };
 
-static constexpr float GMaxGrassBladeHeight = 50.f;
-static constexpr float GMaxGrassBladeWidth  = 2.f;
-static constexpr float GMaxGrassBladeTilt   = 10.f;
-static constexpr float GMaxGrassBladeBend   = 10.f;
-
 DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoaded);
 inline FOnGrassDataAssetLoaded GrassDataAssetLoaded;
 

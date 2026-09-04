@@ -1,10 +1,7 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Shared.h"
-#include "CustomGrassWorldSubsystem.h"
+#include "CustomGrassRenderTypes.h"
 
 // struct FWindParams;
 class UCustomGrassPrimitiveComponent;

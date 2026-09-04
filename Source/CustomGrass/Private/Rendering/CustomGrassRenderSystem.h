@@ -1,14 +1,46 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "RenderGraphResources.h"
+#include "CustomGrassRenderTypes.h"
 
-struct FWindParams
+struct FVolatileBuffers;
+class FCustomGrassSceneProxy;
+
+/** RT-copy of grass parameters from the data asset. */
+struct FDataAssetProxy
 {
-	FTextureRHIRef NoiseTexture;
-	FSamplerStateRHIRef NoiseSampler;
-	FVector2f Direction;
-	float Strength;
-	float Time;
+	template<class T = float>
+	struct TRandomValue { T Val; float Random; };
+		
+	TRandomValue<> Height;
+	TRandomValue<> Width;
+	TRandomValue<> Tilt;
+	TRandomValue<> Bend;
+		
+	TRandomValue<> ClumpStrength;
+	int ClumpGridSize;
+	EClumpFacingType ClumpFacingType;
+	float ClumpFacingStrength;
+		
+	float ShortHeightThreshold;
+		
+	float ViewSpaceCorrection;
+		
+	float NormalRoundnessStrength;
+		
+	float MaxRenderDistance;
+
+	bool bShadowsOn;
+	float ShadowProxyZOffset;
+
+	FWindParams WindParams;
+
+	bool bManualLOD;
+	EGrassLOD GlobalLOD;
+
+	FDataAssetProxy() = default;
+	explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset);
 };
 
 class FCustomGrassRenderSystem
@@ -17,62 +49,6 @@ class FCustomGrassRenderSystem
 
 	using FRDGPooledBufferRef  = TRefCountPtr<FRDGPooledBuffer>;
 	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
-
-	/** Rendering work uploaded by a proxy. */
-	struct FWorkDesc
-	{
-		const FVector ViewOrigin;
-		const FMatrix ViewMatrix;
-		const FProxyLandscapeData LandscapeData;
-		const FCustomGrassSceneProxy* GrassProxy;
-		const TSharedRef<FRenderingResourceHandles> ResourceHandles;
-		EGrassLOD LOD;
-		float SortingScore;
-		
-		int32 TileIndex; // for debug
-		
-		bool operator==(const FWorkDesc& Other) const
-		{
-			return (LandscapeData.SectionBase == Other.LandscapeData.SectionBase)
-				&& (LOD == Other.LOD);
-		}
-	};
-
-	/** RT-copy of grass parameters from the data asset. */
-	struct FDataAssetProxy
-	{
-		template<class T = float>
-		struct TRandomValue { T Val; float Random; };
-		
-		TRandomValue<> Height;
-		TRandomValue<> Width;
-		TRandomValue<> Tilt;
-		TRandomValue<> Bend;
-		
-		TRandomValue<> ClumpStrength;
-		int ClumpGridSize;
-		EClumpFacingType ClumpFacingType;
-		float ClumpFacingStrength;
-		
-		float ShortHeightThreshold;
-		
-		float ViewSpaceCorrection;
-		
-		float NormalRoundnessStrength;
-		
-		float MaxRenderDistance;
-
-		bool bShadowsOn;
-		float ShadowProxyZOffset;
-
-		FWindParams WindParams;
-
-		bool bManualLOD;
-		EGrassLOD GlobalLOD;
-
-		FDataAssetProxy() = default;
-		explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset);
-	};
 
 public:
 	FCustomGrassRenderSystem();
@@ -110,15 +86,14 @@ protected:
 	
 	FCriticalSection AddRenderingWorkCS;
 	
-	/** Scheduled rendering work for the current frame. */
-	TArray<FWorkDesc> QueuedWork;
+	TArray<FProxyRenderWorkDesc> QueuedWork;
 
-	TArray<FWorkDesc> PreviousFrameWork;
+	TArray<FProxyRenderWorkDesc> PreviousFrameWork;
 	FMatrix PreviousFrameViewMatrix;
 
 	static bool IsPreviousFrameView(const FMatrix& ThisFrameView, const FMatrix& PrevFrameView);
 
-	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FWorkDesc>& Work);
+	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FProxyRenderWorkDesc>& Work);
 
 	void InitPerFrameResources(FRDGBuilder& GraphBuilder, FVolatileBuffers& OutBuffers) const;
 
@@ -158,7 +133,7 @@ protected:
 	FRDGPooledTextureRef ShadowWPOTextureAtlas;
 
 	FRDGBufferRef TileAtlasMappingBuffer;
-	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder, const TArray<FWorkDesc>& Work);
+	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder, const TArray<FProxyRenderWorkDesc>& Work);
 	
 	/**
 	 * Representation of the data asset as cached on the render-thread.
@@ -179,7 +154,7 @@ protected:
 	 */
 	void AddComputePass_InstanceGrassBlades(
 		FRDGBuilder& GraphBuilder,
-		const FWorkDesc& Work,
+		const FProxyRenderWorkDesc& Work,
 		const FVolatileBuffers& InBuffers,
 		int32 TileIndex
 	) const;
@@ -190,7 +165,7 @@ protected:
 	 */
 	void AddComputePass_InitIndirectDrawArgs(
 		FRDGBuilder& GraphBuilder,
-		const FWorkDesc& Work,
+		const FProxyRenderWorkDesc& Work,
 		const FVolatileBuffers& InBuffers,
 		int32 TileIndex
 	) const;
