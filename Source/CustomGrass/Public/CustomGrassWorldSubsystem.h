@@ -98,5 +98,3 @@ protected:
 
 	bool bRunningState = false;
 };
-
-FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape);
