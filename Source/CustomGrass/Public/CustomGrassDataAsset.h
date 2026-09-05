@@ -124,8 +124,8 @@ public:
 	bool bDebugShowProxyMesh = false;
 
 	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
-	float ZOffset = 20.f;
+	float ShadowProxyZOffset = 20.f;
 
 	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")
-	int32 ProxyResolution = 64;
+	int32 ShadowProxyResolution = 64;
 };

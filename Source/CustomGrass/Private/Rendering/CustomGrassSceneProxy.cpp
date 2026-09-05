@@ -26,7 +26,7 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 		NoTwoSideMaterialConfig.MaterialRelevance = InComponent->Material_NoTwoSide->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
 	}
 	
-	TObjectPtr<const ULandscapeComponent> LandscapeTile = InComponent->GetLandscapeTile();
+	TObjectPtr<const ULandscapeComponent> LandscapeTile = InComponent->LandscapeTile;
 	check(LandscapeTile);
 
 	FIntRect LandscapeExtent;

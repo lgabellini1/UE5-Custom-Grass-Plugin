@@ -1,6 +1,7 @@
 ﻿#include "CustomGrassShadowProxyComponent.h"
 
 #include "CustomGrassDataAsset.h"
+#include "CustomGrassPrimitiveComponent.h"
 #include "StaticMeshDescription.h"
 #include "Landscape.h"
 #include "StaticMeshOperations.h"
@@ -20,9 +21,37 @@ UCustomGrassShadowProxyComponent::UCustomGrassShadowProxyComponent(const FObject
 	bEvaluateWorldPositionOffsetInRayTracing = true;
 }
 
-void UCustomGrassShadowProxyComponent::BuildMesh(ULandscapeComponent* LandscapeComponent,
-	const UCustomGrassDataAsset* DataAsset)
+UCustomGrassShadowProxyComponent* UCustomGrassShadowProxyComponent::Make(const FInitConfig& Config,
+	const UCustomGrassPrimitiveComponent* ParentGrassTile)
 {
+	auto* ShadowProxy = NewObject<UCustomGrassShadowProxyComponent>(
+		GetOwner(),
+		UCustomGrassShadowProxyComponent::StaticClass(),
+		*FString::Printf(TEXT("CustomGrassShadowProxy_[%d]"), Config.TileIndex)
+	);
+
+	ShadowProxy->PlaneResolution = Config.PlaneMeshResolution;
+	ShadowProxy->SetMaterial(0, Config.Material);
+
+	ShadowProxy->ParentGrassTile = ParentGrassTile;
+
+	return ShadowProxy;
+}
+
+void UCustomGrassShadowProxyComponent::UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset)
+{
+	PlaneResolution = DataAsset.ShadowProxyResolution;
+	SetCastShadow(DataAsset.bShadowsEnabled);
+	
+	SetVisibility(DataAsset.bDebugShowProxyMesh);
+	
+	BuildMesh(DataAsset);
+	MarkRenderStateDirty();
+}
+
+void UCustomGrassShadowProxyComponent::BuildMesh(const UCustomGrassDataAsset& DataAsset)
+{
+	const auto LandscapeComponent = ParentGrassTile->LandscapeTile;
 	const auto LandscapeComponentDataInterface = FLandscapeComponentDataInterface(LandscapeComponent);
 	
 	float Size = LandscapeComponent->ComponentSizeQuads * 1.f;
@@ -121,7 +150,7 @@ void UCustomGrassShadowProxyComponent::BuildMesh(ULandscapeComponent* LandscapeC
     FStaticMeshOperations::ComputeTangentsAndNormals(Desc->GetMeshDescription(),
     	EComputeNTBsFlags::Normals | EComputeNTBsFlags::Tangents);
  
-    Mesh->GetStaticMaterials().Add(FStaticMaterial(DataAsset->ShadowProxyMaterial));
+    Mesh->GetStaticMaterials().Add(FStaticMaterial(DataAsset.ShadowProxyMaterial));
  
     TArray<UStaticMeshDescription*> Descriptions = { Desc };
     Mesh->BuildFromStaticMeshDescriptions(Descriptions, false);

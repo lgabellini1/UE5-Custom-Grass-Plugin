@@ -71,14 +71,14 @@ public:
 	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
 
 	/*void SetGrassDensityRTResource_RenderThread(const FTextureRenderTargetResource* RTResource);*/
-
-	void SetShadowWPOResource_RenderThread(const FTextureRenderTargetResource* RTResource);
-
+	
 	/*void SetMaxDisplacement_RenderThread(float NewVal) { MaxDisplacement = NewVal; }*/
 
 	void NotifyRunningStateFromGameThread(bool bNewGTRunningState);
 
 	void RebuildRenderState(const UCustomGrassDataAsset& DataAsset);
+
+	void UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D* ShadowMap) const;
 
 protected:
 

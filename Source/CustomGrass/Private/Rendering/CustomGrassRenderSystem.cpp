@@ -3,6 +3,7 @@
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassGlobalShaders.h"
 #include "RenderGraphUtils.h"
+#include "Engine/TextureRenderTarget2D.h"
 
 FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 {
@@ -26,7 +27,7 @@ FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 	MaxRenderDistance		= DataAsset.MaxRenderDistance;
 
 	bShadowsOn				= DataAsset.bShadowsEnabled;
-	ShadowProxyZOffset		= DataAsset.ZOffset;
+	ShadowProxyZOffset		= DataAsset.ShadowProxyZOffset;
 
 	bManualLOD = DataAsset.bManualLOD;
 	GlobalLOD  = DataAsset.GrassLOD;
@@ -77,6 +78,7 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem()
 					*FString::Printf(TEXT("IndirectDrawArgs_[%d]"), i));
 			}
 
+			// Required because the lambda may run after the first call of BeginFrame()
 			bResourcesInitialized = true;
 		}
 	);
@@ -90,7 +92,7 @@ FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
 	
 	ENQUEUE_RENDER_COMMAND(DestroyRTResources)
 	(
-		// Get ownership of buffers as the 'this' ptr will deterministically be destroyed
+		// Let closure get ownership of the buffers as the 'this' ptr will be destroyed
 		// (we are in the destructor) once this lambda runs.
 		[InstanceData = MoveTemp(InstanceDataBuffer),
 			IndirectDrawArgs = MoveTemp(IndirectDrawArgsBuffer)](FRHICommandListImmediate& RHICmdList) mutable
@@ -326,15 +328,6 @@ FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThrea
 //		FWindParams(GBlackTexture->GetTextureRHI(), TStaticSamplerState<>::GetRHI(),
 //		FVector2f::Zero(), 0.f)
 	);
-}
-
-void FCustomGrassRenderSystem::SetShadowWPOResource_RenderThread(const FTextureRenderTargetResource* RTResource)
-{
-	check(IsInAnyRenderingThread());
-	check(RTResource);
-	
-	ShadowWPOTextureAtlas = CreateRenderTarget(RTResource->GetRenderTargetTexture(),
-		TEXT("ShadowWPOTextureAtlas"));
 }
 
 void FCustomGrassRenderSystem::AddRenderingWork(const FSceneView* View,
@@ -628,6 +621,21 @@ void FCustomGrassRenderSystem::RebuildDataAssetProxy(const UCustomGrassDataAsset
 		(FRHICommandListImmediate& RHICmdList)
 		{
 			DataAssetProxy = MoveTemp(NewDataAssetProxy);
+		}
+	);
+}
+
+void FCustomGrassRenderSystem::UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D* ShadowMap) const
+{
+	check(ShadowMap);
+	
+	ENQUEUE_RENDER_COMMAND(CreateShadowMapAtlasPooledResource)
+	(
+		[this, ShadowMapResource = ShadowMap->GameThread_GetRenderTargetResource()]
+		(FRHICommandListImmediate& RHICmdList)
+		{
+			ShadowWPOTextureAtlas = CreateRenderTarget(ShadowMapResource->GetRenderTargetTexture(),
+				TEXT("ShadowWPOTextureAtlas"));
 		}
 	);
 }

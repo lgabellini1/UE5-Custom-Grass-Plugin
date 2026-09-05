@@ -1,19 +1,13 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Shared.h"
-#include "CustomGrassDataAsset.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 
 class ALandscape;
-struct FVolatileBuffers;
-struct FRenderingResourceHandles;
-struct FProxyLandscapeData;
-class UCustomGrassDataAsset;
-class FCustomGrassRenderSystem;
 class ULandscapeComponent;
+class UCustomGrassDataAsset;
 class UCustomGrassPrimitiveComponent;
-class UCustomGrassShadowProxyComponent;
+class FCustomGrassRenderSystem;
 
 #define DEBUG_DRAW_TILE_BOUNDS false
 #define DEBUG_LOG_TILE_LOD false
@@ -39,6 +33,8 @@ public:
 	FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem.Get(); }
 
 protected:
+	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
+	
 	enum class EDirtyFlags : uint8
 	{
 		None		 = 0,
@@ -51,36 +47,16 @@ protected:
 	FORCEINLINE EDirtyFlags& operator|=(EDirtyFlags&, EDirtyFlags) const;
 	FORCEINLINE EDirtyFlags  operator&(EDirtyFlags, EDirtyFlags) const;
 	
-	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
-
-/* Landscape */
-	
-	UPROPERTY()
-	TObjectPtr<ALandscape> LandscapeActor;
 	
 	UPROPERTY()
 	TArray<TObjectPtr<ULandscapeComponent>> RegisteredLandscapeTiles;
-
-/* System components */
 	
 	UPROPERTY()
 	TArray<TObjectPtr<UCustomGrassPrimitiveComponent>> GrassTiles;
 
-/* Textures & materials */
-	
 	UPROPERTY()
-	TObjectPtr<UMaterialInstanceDynamic> ShadowProxyMID;
-
-	UPROPERTY()
-	TObjectPtr<UTextureRenderTarget2D> ShadowWPOTextureAtlas;
+	TObjectPtr<UCustomGrassDataAsset> GrassDataAsset;
 	
-	
-	void SpawnComponents();
-	void DespawnComponents();
-
-	/** Allows changing grass aspect dynamically. */
-	UPROPERTY()
-	const UCustomGrassDataAsset* GrassDataAsset;
 
 	EDirtyFlags DirtyFlags = EDirtyFlags::None;
 	void MarkDirty(EDirtyFlags Flags);
@@ -88,13 +64,19 @@ protected:
 	void OnCVarGrassEnabledChanged();
 	void OnDataAssetLoaded();
 	void OnDataAssetValuesChanged();
-
-	void InitShadowMapTextureAtlas();
-	void SetupShadowProxyMaterial();
-
-	void UpdateRunningState();
-	void UpdateRenderState() const;
-	void UpdateComponents();
-
+	
 	bool bRunningState = false;
+	void UpdateRunningState();
+	
+	void UpdateRenderState() const;
+	
+	void UpdateComponents();
+	void SpawnComponents();
+	void DespawnComponents();
+
+	
+	UPROPERTY()
+	TObjectPtr<UTextureRenderTarget2D> ShadowWPOTextureAtlas;
+	
+	void CreateShadowMapTextureAtlas();
 };

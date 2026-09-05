@@ -1,10 +1,12 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#include "CustomGrassPrimitiveComponent.h"
-#include "CustomGrassSceneProxy.h"
+﻿#include "CustomGrassPrimitiveComponent.h"
+#include "CustomGrassDataAsset.h"
+#include "Rendering/CustomGrassSceneProxy.h"
+#include "Rendering/CustomGrassShadowProxyComponent.h"
 #include "CustomGrassSettings.h"
 #include "CustomGrassWorldSubsystem.h"
 #include "LandscapeComponent.h"
+#include "Landscape.h"
+#include "Utilities.h"
 
 UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -18,15 +20,37 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 	SetCastContactShadow(true);
 }
 
+void UCustomGrassPrimitiveComponent::Initialize(
+	const FInitConfig& Config,
+	ULandscapeComponent* AssociatedLandscapeTile,
+	const UCustomGrassDataAsset& DataAsset)
+{
+	Material = Config.Material;
+	Material_NoTwoSide = Config.Material_NoTwoSides;
+	
+	LandscapeTile = AssociatedLandscapeTile;
+	TileIndex = Config.TileIndex;
+
+	CreateShadowProxy(DataAsset);
+}
+
+void UCustomGrassPrimitiveComponent::UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset)
+{
+	SetCastShadow(DataAsset.bShadowsEnabled);
+	ShadowProxy->UpdateRenderSettings(DataAsset);
+
+	MarkRenderStateDirty();
+}
+
 void UCustomGrassPrimitiveComponent::OnComponentCreated()
 {
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
-void UCustomGrassPrimitiveComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
+void UCustomGrassPrimitiveComponent::GetUsedMaterials(
+	TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
 {
-	OutMaterials.Add(Material);
-	OutMaterials.Add(Material_NoTwoSide);
+	OutMaterials.Append({ Material, Material_NoTwoSide });
 }
 
 FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
@@ -34,7 +58,7 @@ FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
 	const auto* WorldSubsystem = GetWorld()->GetSubsystem<UCustomGrassWorldSubsystem>();
 	check(WorldSubsystem);
 	
-	return new FCustomGrassSceneProxy(this, WorldSubsystem->GetRenderSystem(), Index);
+	return new FCustomGrassSceneProxy(this, WorldSubsystem->GetRenderSystem(), TileIndex);
 }
 
 FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& LocalToWorld) const
@@ -51,4 +75,46 @@ FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& Lo
 	ExpandedBox.Min.Z -= VerticalOffset;
 	
 	return FBoxSphereBounds(ExpandedBox);
+}
+
+void UCustomGrassPrimitiveComponent::CreateShadowProxy(const UCustomGrassDataAsset& DataAsset)
+{
+	auto* World = GetWorld();
+	
+	auto* ShadowProxy = UCustomGrassShadowProxyComponent::Make(
+		UCustomGrassShadowProxyComponent::FInitConfig(
+			DataAsset.ShadowProxyResolution,
+			TileIndex,
+			CreateShadowProxyMID(DataAsset)
+		));
+
+	ShadowProxy->RegisterComponentWithWorld(World);
+	ShadowProxy->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
+	ShadowProxy->BuildMesh(LandscapeTile, &DataAsset);
+
+	this->ShadowProxy = ShadowProxy;
+}
+
+UMaterialInstanceDynamic* UCustomGrassPrimitiveComponent::CreateShadowProxyMID(const UCustomGrassDataAsset& DataAsset)
+{
+	auto* ShadowProxyMID = UMaterialInstanceDynamic::Create(
+		DataAsset.ShadowProxyMaterial, this
+	);
+	
+	ShadowProxyMID->SetTextureParameterValue(
+		TEXT("ShadowWPOTextureAtlas"), ShadowWPOTextureAtlas);
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("AtlasGridSize"), GMaxRenderedTiles / 2);
+
+	const auto* LandscapeActor = LandscapeTile->GetLandscapeActor();
+	
+	ShadowProxyMID->SetVectorParameterValue(
+		TEXT("LandscapeWorldOrigin"), FLinearColor(LandscapeActor->GetActorLocation()));
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("LandscapeWorldSize"), GetLandscapeExtentInWorldUnits(LandscapeActor).X);
+	
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("MaxGrassHeight"), GMaxGrassBladeHeight);	
+		
+	return ShadowProxyMID;	
 }
