@@ -6,10 +6,13 @@
 
 struct FVolatileBuffers;
 class FCustomGrassSceneProxy;
+class UCustomGrassDataAsset;
 
 /** RT-copy of grass parameters from the data asset. */
 struct FDataAssetProxy
 {
+	explicit FDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
+	
 	template<class T = float>
 	struct TRandomValue { T Val; float Random; };
 		
@@ -38,15 +41,10 @@ struct FDataAssetProxy
 
 	bool bManualLOD;
 	EGrassLOD GlobalLOD;
-
-	FDataAssetProxy() = default;
-	explicit FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset);
 };
 
 class FCustomGrassRenderSystem
 {
-	friend class UCustomGrassWorldSubsystem;
-
 	using FRDGPooledBufferRef  = TRefCountPtr<FRDGPooledBuffer>;
 	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
@@ -78,11 +76,17 @@ public:
 
 	/*void SetMaxDisplacement_RenderThread(float NewVal) { MaxDisplacement = NewVal; }*/
 
+	void NotifyRunningStateFromGameThread(bool bNewGTRunningState);
+
+	void RebuildRenderState(const UCustomGrassDataAsset& DataAsset);
+
 protected:
 
-	bool bIsActive = false;
+	bool bRunningState = false, bGTRunningState = false;
 	bool bResourcesInitialized = false;
 	bool bHasActiveSelection = false;
+
+	bool IsRunning() const;
 	
 	FCriticalSection AddRenderingWorkCS;
 	
@@ -138,8 +142,10 @@ protected:
 	/**
 	 * Representation of the data asset as cached on the render-thread.
 	 */
-	FDataAssetProxy DataAssetProxy;
-
+	TOptional<FDataAssetProxy> DataAssetProxy;
+	
+	void RebuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
+	
 	FGrassParams GrassParams;
 	
 	/** Cached heightmap SRVs for this frame. */

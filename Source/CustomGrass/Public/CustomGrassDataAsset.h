@@ -18,12 +18,19 @@ enum class EClumpFacingType : uint8
 DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoaded);
 inline FOnGrassDataAssetLoaded GrassDataAssetLoaded;
 
+DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetValuesChanged)
+inline FOnGrassDataAssetValuesChanged GrassDataAssetValuesChanged;
+
 UCLASS()
 class UCustomGrassDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+	
 	UPROPERTY(EditAnywhere, Category="Appearance")
 	TObjectPtr<UMaterialInterface> GrassMaterial = nullptr;
 

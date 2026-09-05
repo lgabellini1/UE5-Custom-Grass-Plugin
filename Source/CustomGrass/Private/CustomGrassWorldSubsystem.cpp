@@ -2,6 +2,7 @@
 #include "CustomGrassConsoleVars.h"
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassPrimitiveComponent.h"
+#include "Rendering/CustomGrassRenderSystem.h"
 #include "Rendering/CustomGrassShadowProxyComponent.h"
 #include "Rendering/CustomGrassSceneProxy.h"
 #include "CustomGrassSettings.h"
@@ -16,17 +17,24 @@
 void UCustomGrassWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	
-	RenderSystem = MakeUnique<FCustomGrassRenderSystem>();
 
-	// Set up delegates
-	GrassDataAssetLoaded.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetChanged);
-	CVarGrassEnabledChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnCVarChanged);
-
-	// Try loading the data asset from the plugin settings; if not found the system won't start
 	const auto* Settings = GetDefault<UCustomGrassSettings>();
 	GrassDataAsset = Settings->GrassDataAsset.LoadSynchronous();
 
+	if (!GrassDataAsset)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Grass data asset not found! System will not start."));
+	}
+	
+	RenderSystem = MakeUnique<FCustomGrassRenderSystem>();
+
+	CVarGrassEnabledChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnCVarGrassEnabledChanged);
+	GrassDataAssetLoaded.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetLoaded);
+	GrassDataAssetValuesChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetValuesChanged);
+}
+
+void UCustomGrassWorldSubsystem::InitShadowMapTextureAtlas()
+{
 	// Shadows: create the texture atlas on the GT
 	
 	ShadowWPOTextureAtlas = NewObject<UTextureRenderTarget2D>();
@@ -64,7 +72,7 @@ void UCustomGrassWorldSubsystem::Deinitialize()
 	FlushRenderingCommands();
 	RenderSystem = nullptr;
 
-	LandscapeTiles.Empty();
+	RegisteredLandscapeTiles.Empty();
 }
 
 void UCustomGrassWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -78,7 +86,7 @@ void UCustomGrassWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		if (const auto* Landscape = Cast<ALandscape>(Actor))
 		{
-			LandscapeTiles.Append(Landscape->LandscapeComponents);
+			RegisteredLandscapeTiles.Append(Landscape->LandscapeComponents);
 		}
 	}
 	
@@ -101,20 +109,18 @@ bool UCustomGrassWorldSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UCustomGrassWorldSubsystem::SpawnComponents()
 {
-	check(GrassDataAsset);
-	
 	UWorld& World = GetWorldRef();
 	
-	for (int32 i = 0; i < LandscapeTiles.Num(); i++)
+	for (int32 i = 0; i < RegisteredLandscapeTiles.Num(); i++)
 	{
 		UCustomGrassPrimitiveComponent* Component = NewObject<UCustomGrassPrimitiveComponent>(
-			LandscapeTiles[i]->GetOwner(),
+			RegisteredLandscapeTiles[i]->GetOwner(),
 			UCustomGrassPrimitiveComponent::StaticClass(),
 			*FString::Printf(TEXT("CustomGrassTile_[%d]"), i)
 		);
 		
 		UCustomGrassShadowProxyComponent* ShadowProxy = NewObject<UCustomGrassShadowProxyComponent>(
-			LandscapeTiles[i]->GetOwner(),
+			RegisteredLandscapeTiles[i]->GetOwner(),
 			UCustomGrassShadowProxyComponent::StaticClass(),
 			*FString::Printf(TEXT("CustomGrassShadowProxy_[%d]"), i)
 		);
@@ -122,8 +128,8 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 		ShadowProxy->PlaneResolution = GrassDataAsset->ProxyResolution;
 
 		ShadowProxy->RegisterComponentWithWorld(&World);
-		ShadowProxy->AttachToComponent(LandscapeTiles[i], FAttachmentTransformRules::KeepRelativeTransform);
-		ShadowProxy->BuildMesh(LandscapeTiles[i], GrassDataAsset);
+		ShadowProxy->AttachToComponent(RegisteredLandscapeTiles[i], FAttachmentTransformRules::KeepRelativeTransform);
+		ShadowProxy->BuildMesh(RegisteredLandscapeTiles[i], GrassDataAsset);
 		ShadowProxy->SetCastShadow(GrassDataAsset->bShadowsEnabled);
 		check(ShadowProxyMID);
 		ShadowProxy->SetMaterial(0, ShadowProxyMID);
@@ -132,12 +138,12 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 		
 		Component->Material			  = GrassDataAsset->GrassMaterial;
 		Component->Material_NoTwoSide = GrassDataAsset->GrassMaterial_NoTwoSided;
-		Component->LandscapeTile = LandscapeTiles[i];
+		Component->LandscapeTile = RegisteredLandscapeTiles[i];
 
 		Component->SetIndex(i);
 
 		Component->RegisterComponentWithWorld(&World);
-		Component->AttachToComponent(LandscapeTiles[i], FAttachmentTransformRules::KeepRelativeTransform);
+		Component->AttachToComponent(RegisteredLandscapeTiles[i], FAttachmentTransformRules::KeepRelativeTransform);
 		Component->SetCastShadow(GrassDataAsset->bShadowsEnabled);
 				
 		GrassTileComponents.Add(Component);
@@ -158,30 +164,32 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 
 void UCustomGrassWorldSubsystem::DespawnComponents()
 {
-	for (UCustomGrassPrimitiveComponent* Component : GrassTileComponents)
+	for (const TObjectPtr<UCustomGrassPrimitiveComponent> Tile : GrassTiles)
 	{
-		Component->DestroyComponent();
+		Tile->DestroyComponent();
 	}
-
-	GrassTileComponents.Empty();
-	ShadowProxyComponents.Empty();
-}
-
-void UCustomGrassWorldSubsystem::OnCVarChanged()
-{
-	RecomputeRunningState();
-}
-
-void UCustomGrassWorldSubsystem::OnDataAssetChanged()
-{
-	const auto* Settings = GetDefault<UCustomGrassSettings>();
 	
-	if (const UCustomGrassDataAsset* NewAsset = Settings->GrassDataAsset.LoadSynchronous();
-		NewAsset != GrassDataAsset)
-	{
-		GrassDataAsset = NewAsset;
-		RecomputeRunningState();
-	}
+	GrassTiles.Empty();
+}
+
+void UCustomGrassWorldSubsystem::MarkDirty(EDirtyFlags Flags)
+{
+	DirtyFlags |= Flags;
+}
+
+void UCustomGrassWorldSubsystem::OnCVarGrassEnabledChanged()
+{
+	MarkDirty(EDirtyFlags::RunningState);
+}
+
+void UCustomGrassWorldSubsystem::OnDataAssetLoaded()
+{
+	MarkDirty(EDirtyFlags::RunningState);
+}
+
+void UCustomGrassWorldSubsystem::OnDataAssetValuesChanged()
+{
+	MarkDirty(EDirtyFlags::Rendering);
 }
 
 void UCustomGrassWorldSubsystem::SetupShadowProxyMaterial()
@@ -222,13 +230,13 @@ void UCustomGrassWorldSubsystem::RecomputeRunningState()
 
 	bIsNowActive ? SpawnComponents() : DespawnComponents();
 
-	for (int32 i = 0; i < LandscapeTiles.Num(); i++)
+	for (int32 i = 0; i < RegisteredLandscapeTiles.Num(); i++)
 	{
 		auto ShadowProxy = ShadowProxyComponents[i];
 		ShadowProxy->PlaneResolution = GrassDataAsset->ProxyResolution;
 		ShadowProxy->SetVisibility(GrassDataAsset->bDebugShowProxyMesh);
 		ShadowProxy->SetCastShadow(GrassDataAsset->bShadowsEnabled);
-		ShadowProxy->BuildMesh(LandscapeTiles[i], GrassDataAsset);
+		ShadowProxy->BuildMesh(RegisteredLandscapeTiles[i], GrassDataAsset);
 		
 		ShadowProxy->MarkRenderStateDirty();
 
@@ -237,40 +245,62 @@ void UCustomGrassWorldSubsystem::RecomputeRunningState()
 
 		GrassTile->MarkRenderStateDirty();
 	}
+}
 
-	const auto DataAssetProxy = FDataAssetProxy(GrassDataAsset);
+void UCustomGrassWorldSubsystem::UpdateRunningState()
+{
+	const bool bIsDataAssetLoaded  = GrassDataAsset != nullptr;
+	const bool bIsCVarGrassEnabled = CVarGrassEnabled.GetValueOnGameThread();
 	
-	// Mirrors state change on the RT through the render system
+	const bool bExpectedRunningState = bIsDataAssetLoaded
+		&& bIsCVarGrassEnabled;
 
-	ENQUEUE_RENDER_COMMAND(SetGrassRendererReady)
-	(
-		[=, RenderSystem = RenderSystem.Get()](FRHICommandListImmediate& RHICmdList)
-		{
-			check(RenderSystem);
-				
-			RenderSystem->bIsActive = bIsNowActive;
+	if (bExpectedRunningState != bRunningState)
+	{
+		bRunningState = bExpectedRunningState;
+		RenderSystem->NotifyRunningStateFromGameThread(bRunningState);
+		MarkDirty(EDirtyFlags::Components);
+	}
+}
 
-			if (bIsDataAssetLoaded)
-			{
-				RenderSystem->DataAssetProxy = DataAssetProxy;
-			}
-		}
-	);
+void UCustomGrassWorldSubsystem::UpdateRenderState() const
+{
+	RenderSystem->RebuildRenderState(*GrassDataAsset);
+}
+
+void UCustomGrassWorldSubsystem::UpdateComponents()
+{
+	const bool bAreComponentsSpawned = !GrassTiles.IsEmpty();
+
+	if (bRunningState && !bAreComponentsSpawned)
+	{
+		SpawnComponents();
+	}
+	else if (!bRunningState)
+	{
+		DespawnComponents();
+	}
 }
 
 void UCustomGrassWorldSubsystem::Tick(float DeltaTime)
 {
-#if WITH_EDITOR
-	const auto DataAssetProxy = FDataAssetProxy(GrassDataAsset);
+	const EDirtyFlags Flags = DirtyFlags;
+	DirtyFlags = EDirtyFlags::None;
 
-	ENQUEUE_RENDER_COMMAND(UpdateDataAsset)
-	(
-		[=, RenderSystem = RenderSystem.Get()](FRHICommandListImmediate& RHICmdList)
-		{
-			RenderSystem->DataAssetProxy = DataAssetProxy;
-		}
-	);
-#endif
+	if (EnumHasAnyFlags(Flags, EDirtyFlags::RunningState))
+	{
+		UpdateRunningState();
+	}
+
+	if (EnumHasAnyFlags(Flags, EDirtyFlags::Rendering))
+	{
+		UpdateRenderState();
+	}
+
+	if (EnumHasAnyFlags(Flags, EDirtyFlags::Components))
+	{
+		UpdateComponents();
+	}
 }
 
 FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape)
@@ -281,4 +311,29 @@ FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape)
 	return FVector2D(
 		LandscapeExtent.Width() * Landscape->GetActorScale3D().X,
 		LandscapeExtent.Height() * Landscape->GetActorScale3D().Y);
+}
+
+UCustomGrassWorldSubsystem::EDirtyFlags UCustomGrassWorldSubsystem::operator|(
+	EDirtyFlags F1,
+	EDirtyFlags F2) const
+{
+	return static_cast<EDirtyFlags>(
+		static_cast<uint8>(F1) | static_cast<uint8>(F2)
+	);
+}
+
+UCustomGrassWorldSubsystem::EDirtyFlags& UCustomGrassWorldSubsystem::operator|=(
+	EDirtyFlags& F1,
+	EDirtyFlags F2) const
+{
+	return F1 = F1 | F2;
+}
+
+UCustomGrassWorldSubsystem::EDirtyFlags UCustomGrassWorldSubsystem::operator&(
+	EDirtyFlags F1,
+	EDirtyFlags F2) const
+{
+	return static_cast<EDirtyFlags>(
+		static_cast<uint8>(F1) & static_cast<uint8>(F2)
+	);
 }

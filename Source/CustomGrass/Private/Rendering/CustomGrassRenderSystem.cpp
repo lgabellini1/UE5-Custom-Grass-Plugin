@@ -1,39 +1,40 @@
 #include "CustomGrassRenderSystem.h"
 #include "CustomGrassConsoleVars.h"
+#include "CustomGrassDataAsset.h"
 #include "CustomGrassGlobalShaders.h"
 #include "RenderGraphUtils.h"
 
-FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset* const DataAsset)
+FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 {
-	Height = { DataAsset->Height, DataAsset->RandomizeHeight };
-	Width  = { DataAsset->Width, DataAsset->RandomizeWidth };
-	Tilt   = { DataAsset->Tilt, DataAsset->RandomizeTilt };
-	Bend   = { DataAsset->Bend, DataAsset->RandomizeBend };
-	ClumpStrength = { DataAsset->ClumpStrength, DataAsset->RandomizeClumpStrength };
+	Height = { DataAsset.Height, DataAsset.RandomizeHeight };
+	Width  = { DataAsset.Width, DataAsset.RandomizeWidth };
+	Tilt   = { DataAsset.Tilt, DataAsset.RandomizeTilt };
+	Bend   = { DataAsset.Bend, DataAsset.RandomizeBend };
+	ClumpStrength = { DataAsset.ClumpStrength, DataAsset.RandomizeClumpStrength };
 			
-	ClumpGridSize			= DataAsset->ClumpGridSize;
+	ClumpGridSize			= DataAsset.ClumpGridSize;
 			
-	ClumpFacingType			= DataAsset->ClumpFacingType;
-	ClumpFacingStrength		= DataAsset->ClumpFacingStrength;
+	ClumpFacingType			= DataAsset.ClumpFacingType;
+	ClumpFacingStrength		= DataAsset.ClumpFacingStrength;
 			
-	ShortHeightThreshold	= DataAsset->ShortHeightThreshold;
+	ShortHeightThreshold	= DataAsset.ShortHeightThreshold;
 			
-	ViewSpaceCorrection		= DataAsset->ViewSpaceCorrection;
+	ViewSpaceCorrection		= DataAsset.ViewSpaceCorrection;
 			
-	NormalRoundnessStrength = DataAsset->NormalRoundnessStrength;
+	NormalRoundnessStrength = DataAsset.NormalRoundnessStrength;
 			
-	MaxRenderDistance		= DataAsset->MaxRenderDistance;
+	MaxRenderDistance		= DataAsset.MaxRenderDistance;
 
-	bShadowsOn				= DataAsset->bShadowsEnabled;
-	ShadowProxyZOffset		= DataAsset->ZOffset;
+	bShadowsOn				= DataAsset.bShadowsEnabled;
+	ShadowProxyZOffset		= DataAsset.ZOffset;
 
-	bManualLOD = DataAsset->bManualLOD;
-	GlobalLOD  = DataAsset->GrassLOD;
+	bManualLOD = DataAsset.bManualLOD;
+	GlobalLOD  = DataAsset.GrassLOD;
 
-	const FTextureRHIRef NoiseTexture = DataAsset->NoiseTexture
-		? DataAsset->NoiseTexture->GetResource()->GetTextureRHI() : GBlackTexture->GetTextureRHI();
+	const FTextureRHIRef NoiseTexture = DataAsset.NoiseTexture
+		? DataAsset.NoiseTexture->GetResource()->GetTextureRHI() : GBlackTexture->GetTextureRHI();
 	WindParams = FWindParams(NoiseTexture, TStaticSamplerState<SF_Point>::GetRHI(),
-		DataAsset->WindDirection.GetSafeNormal(), DataAsset->WindStrength, 0.f);
+		DataAsset.WindDirection.GetSafeNormal(), DataAsset.WindStrength, 0.f);
 }
 
 /** Per-frame buffers as RDG resources. */
@@ -114,11 +115,16 @@ float FCustomGrassRenderSystem::CalcTileSortingScore(const FSceneView* View,
 	return Depth - 0.001f * CameraToTile.SizeSquared();
 }
 
+bool FCustomGrassRenderSystem::IsRunning() const
+{
+	return bGTRunningState && bResourcesInitialized;
+}
+
 void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 {
 	check(IsInRenderingThread());
 	
-	if (!bIsActive || !bResourcesInitialized || !bHasActiveSelection)
+	if (!IsRunning())
 		return;
 
 	RDG_EVENT_SCOPE(GraphBuilder, "CustomGrass");
@@ -209,7 +215,7 @@ void FCustomGrassRenderSystem::EndFrame(FRDGBuilder& GraphBuilder)
 {
 	check(IsInRenderingThread());
 
-	if (!bIsActive)
+	if (!IsRunning())
 		return;
 
 #if WITH_EDITOR
@@ -291,6 +297,12 @@ void FCustomGrassRenderSystem::EndFrame(FRDGBuilder& GraphBuilder)
 
 	for (int i = 0; i < TileHeightmaps.Num(); i++)
 		TileHeightmaps[i] = nullptr;
+}
+
+void FCustomGrassRenderSystem::RebuildRenderState(const UCustomGrassDataAsset& DataAsset)
+{
+	...
+	RebuildDataAssetProxy(DataAsset);
 }
 
 bool FCustomGrassRenderSystem::IsPreviousFrameView(const FMatrix& ThisFrameView, const FMatrix& PrevFrameView)
@@ -601,4 +613,21 @@ void FCustomGrassRenderSystem::InitPerFrameResources(FRDGBuilder& GraphBuilder, 
 		TEXT("DensityAccumAtlas"));
 	OutBuffers.DensityAccumTextureAtlasUAV = GraphBuilder.CreateUAV(OutBuffers.DensityAccumTextureAtlas);
 	OutBuffers.DensityAccumTextureAtlasSRV = GraphBuilder.CreateSRV(OutBuffers.DensityAccumTextureAtlas);
+}
+
+void FCustomGrassRenderSystem::NotifyRunningStateFromGameThread(bool bNewGTRunningState)
+{
+	bGTRunningState = bNewGTRunningState;
+}
+
+void FCustomGrassRenderSystem::RebuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
+{
+	ENQUEUE_RENDER_COMMAND(RebuildDataAssetProxy)
+	(
+		[this, NewDataAssetProxy = FDataAssetProxy(DataAsset)]
+		(FRHICommandListImmediate& RHICmdList)
+		{
+			DataAssetProxy = MoveTemp(NewDataAssetProxy);
+		}
+	);
 }
