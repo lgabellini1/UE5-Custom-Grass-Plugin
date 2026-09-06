@@ -8,20 +8,17 @@ struct FVolatileBuffers;
 class FCustomGrassSceneProxy;
 class UCustomGrassDataAsset;
 
-/** RT-copy of grass parameters from the data asset. */
+/** Render-thread copy of the data asset. */
 struct FDataAssetProxy
 {
 	explicit FDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
-	
-	template<class T = float>
-	struct TRandomValue { T Val; float Random; };
 		
-	TRandomValue<> Height;
-	TRandomValue<> Width;
-	TRandomValue<> Tilt;
-	TRandomValue<> Bend;
+	TRandomVariationValue<float> Height;
+	TRandomVariationValue<float> Width;
+	TRandomVariationValue<float> Tilt;
+	TRandomVariationValue<float> Bend;
 		
-	TRandomValue<> ClumpStrength;
+	TRandomVariationValue<float> ClumpStrength;
 	int ClumpGridSize;
 	EClumpFacingType ClumpFacingType;
 	float ClumpFacingStrength;
@@ -39,7 +36,7 @@ struct FDataAssetProxy
 
 	FWindParams WindParams;
 
-	bool bManualLOD;
+	bool bFixedLOD;
 	EGrassLOD GlobalLOD;
 };
 

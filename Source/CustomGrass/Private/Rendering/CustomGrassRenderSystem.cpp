@@ -7,16 +7,15 @@
 
 FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 {
-	Height = { DataAsset.Height, DataAsset.RandomizeHeight };
-	Width  = { DataAsset.Width, DataAsset.RandomizeWidth };
-	Tilt   = { DataAsset.Tilt, DataAsset.RandomizeTilt };
-	Bend   = { DataAsset.Bend, DataAsset.RandomizeBend };
-	ClumpStrength = { DataAsset.ClumpStrength, DataAsset.RandomizeClumpStrength };
+	Height = DataAsset.Height.ToValue();
+	Width  = DataAsset.Width.ToValue();
+	Tilt   = DataAsset.Tilt.ToValue();
+	Bend   = DataAsset.Bend.ToValue();
 			
-	ClumpGridSize			= DataAsset.ClumpGridSize;
-			
-	ClumpFacingType			= DataAsset.ClumpFacingType;
-	ClumpFacingStrength		= DataAsset.ClumpFacingStrength;
+	ClumpGridSize		= DataAsset.ClumpGridSize;
+	ClumpStrength		= DataAsset.ClumpStrength.ToValue();
+	ClumpFacingType		= DataAsset.ClumpFacingType;
+	ClumpFacingStrength	= DataAsset.ClumpFacingStrength;
 			
 	ShortHeightThreshold	= DataAsset.ShortHeightThreshold;
 			
@@ -26,11 +25,11 @@ FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 			
 	MaxRenderDistance		= DataAsset.MaxRenderDistance;
 
-	bShadowsOn				= DataAsset.bShadowsEnabled;
-	ShadowProxyZOffset		= DataAsset.ShadowProxyZOffset;
+	bShadowsOn			= DataAsset.bShadowsEnabled;
+	ShadowProxyZOffset	= DataAsset.ShadowProxyZOffset;
 
-	bManualLOD = DataAsset.bManualLOD;
-	GlobalLOD  = DataAsset.GrassLOD;
+	bFixedLOD = DataAsset.bFixedLOD;
+	GlobalLOD = DataAsset.GlobalLOD;
 
 	const FTextureRHIRef NoiseTexture = DataAsset.NoiseTexture
 		? DataAsset.NoiseTexture->GetResource()->GetTextureRHI() : GBlackTexture->GetTextureRHI();

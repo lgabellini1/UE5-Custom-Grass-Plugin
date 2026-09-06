@@ -2,6 +2,15 @@
 
 #include "CoreMinimal.h"
 
+UENUM(BlueprintType)
+enum class EClumpFacingType : uint8
+{
+	NoClumpFacing,
+	SameDirection,
+	FaceClumpCenter,
+	OppositeClumpCenter
+};
+
 /**
  * A ceil on the number of rendered tiles. This lets us avoid unexpected memory
  * blow-ups while avoiding costly dynamic resizing of the buffers on each frame.
