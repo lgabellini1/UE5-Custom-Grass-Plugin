@@ -25,9 +25,9 @@ void UCustomGrassPrimitiveComponent::Initialize(
 	ULandscapeComponent* AssociatedLandscapeTile,
 	const UCustomGrassDataAsset& DataAsset)
 {
-	Material = Config.Material;
-	Material_NoTwoSide = Config.Material_NoTwoSides;
-	
+	MaterialSet = Config.Material;
+
+	check(AssociatedLandscapeTile);
 	LandscapeTile = AssociatedLandscapeTile;
 	TileIndex = Config.TileIndex;
 
@@ -50,7 +50,7 @@ void UCustomGrassPrimitiveComponent::OnComponentCreated()
 void UCustomGrassPrimitiveComponent::GetUsedMaterials(
 	TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
 {
-	OutMaterials.Append({ Material, Material_NoTwoSide });
+	OutMaterials.Append({ MaterialSet.Material, MaterialSet.MaterialNoTwoSides });
 }
 
 FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
@@ -92,7 +92,18 @@ void UCustomGrassPrimitiveComponent::CreateShadowProxy(const UCustomGrassDataAss
 	ShadowProxy->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
 	ShadowProxy->BuildMesh(LandscapeTile, &DataAsset);
 
-	this->ShadowProxy = ShadowProxy;
+		this->ShadowProxy = ShadowProxy;
+	}
+}
+
+TNotNull<ULandscapeComponent*> UCustomGrassPrimitiveComponent::GetAssociatedLandscapeTile() const
+{
+	return LandscapeTile;
+}
+
+FCustomGrassMaterial UCustomGrassPrimitiveComponent::GetMaterial() const
+{
+	return MaterialSet;
 }
 
 UMaterialInstanceDynamic* UCustomGrassPrimitiveComponent::CreateShadowProxyMID(const UCustomGrassDataAsset& DataAsset)

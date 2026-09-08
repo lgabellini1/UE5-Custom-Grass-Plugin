@@ -10,23 +10,29 @@
 
 FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent* InComponent,
                                                FCustomGrassRenderSystem* InRenderSystem, int32 Index)
-: FPrimitiveSceneProxy(InComponent,
-	FName(FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(Index) + FString(TEXT("]")))),
-	TileIndex(Index), RenderSystem(InRenderSystem)
+: FPrimitiveSceneProxy(InComponent, FName(
+	FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(Index) + FString(TEXT("]")))),
+TileIndex(Index), RenderSystem(InRenderSystem)
 {
-	if (!ensure(InComponent->Material) || !ensure(InComponent->Material_NoTwoSide))
-	{
-		UE_LOG(LogTemp, Error, TEXT("CustomGrass: Material is NULL!"));
-	}
-	else
-	{
-		MaterialConfig.MaterialProxy	 = InComponent->Material->GetRenderProxy();
-		MaterialConfig.MaterialRelevance = InComponent->Material->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
-		NoTwoSideMaterialConfig.MaterialProxy	  = InComponent->Material_NoTwoSide->GetRenderProxy();
-		NoTwoSideMaterialConfig.MaterialRelevance = InComponent->Material_NoTwoSide->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
-	}
+	const auto Material = InComponent->GetMaterial();
+	ensure(Material, "CustomGrass: Material is NULL!");
+
+	const EShaderPlatform ShaderPlatform = GetScene().GetShaderPlatform();
 	
-	TObjectPtr<const ULandscapeComponent> LandscapeTile = InComponent->LandscapeTile;
+	MaterialConfig = FMaterialConfig(Material.Material, ShaderPlatform);
+	NoTwoSideMaterialConfig = FMaterialConfig(Material.MaterialNoTwoSides, ShaderPlatform);
+	
+	const ULandscapeComponent* LandscapeTile = InComponent->GetAssociatedLandscapeTile();
+	BuildLandscapeData(LandscapeTile);
+	
+	//.ShadowProxyPlaneHeight = InComponent->ShadowProxy->GetComponentTransform().GetLocation().Z;
+	
+	// @note: this code assumes that the landscape does not change at runtime, and
+	// it's position remains unchanged!
+}
+
+void FCustomGrassSceneProxy::BuildLandscapeData(const ULandscapeComponent* LandscapeTile)
+{
 	check(LandscapeTile);
 
 	FIntRect LandscapeExtent;

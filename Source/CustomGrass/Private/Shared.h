@@ -21,3 +21,14 @@ static constexpr float GMaxGrassBladeHeight = 50.f;
 static constexpr float GMaxGrassBladeWidth  = 2.f;
 static constexpr float GMaxGrassBladeTilt   = 10.f;
 static constexpr float GMaxGrassBladeBend   = 10.f;
+
+struct FCustomGrassMaterial
+{
+	UMaterialInterface* Material;
+	UMaterialInterface* MaterialNoTwoSides;
+
+	explicit operator bool() const
+	{
+		return Material != nullptr && MaterialNoTwoSides != nullptr;
+	}
+};

@@ -15,9 +15,7 @@ class UCustomGrassPrimitiveComponent : public UPrimitiveComponent
 public:
 	struct FInitConfig
 	{
-		UMaterialInterface* Material;
-		// Same as above, but with two-sided rendering disabled.
-		UMaterialInterface* Material_NoTwoSides;
+		FCustomGrassMaterial Material;
 		int32 TileIndex;
 	};
 	
@@ -42,16 +40,25 @@ public:
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials,
 		bool bGetDebugMaterials = false) const override;
 
+	TNotNull<ULandscapeComponent*> GetAssociatedLandscapeTile() const;
+	FCustomGrassMaterial GetMaterial() const;
+
 protected:
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 	
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
+
+	UPROPERTY()
+	TObjectPtr<ULandscapeComponent> LandscapeTile;
 	
-	void CreateShadowProxy(const UCustomGrassDataAsset& DataAsset);
-	UMaterialInstanceDynamic* CreateShadowProxyMID(const UCustomGrassDataAsset& DataAsset);
+	UPROPERTY()
+	FCustomGrassMaterial MaterialSet;
+
+	int32 TileIndex = -1;
 
 	UPROPERTY()
 	TObjectPtr<UCustomGrassShadowProxyComponent> ShadowProxy;
-
-	int32 TileIndex;
+	
+	void CreateShadowProxy(const UCustomGrassDataAsset& DataAsset);
+	UMaterialInstanceDynamic* CreateShadowProxyMID(const UCustomGrassDataAsset& DataAsset);
 };

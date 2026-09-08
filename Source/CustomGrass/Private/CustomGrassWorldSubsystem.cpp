@@ -97,12 +97,11 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 			*FString::Printf(TEXT("CustomGrassTile_[%d]"), i)
 		);
 		
+		const auto Material = FCustomGrassMaterial(GrassDataAsset->GrassMaterial, 
+			GrassDataAsset->GrassMaterial_NoTwoSided);
+		
 		GrassTileComponent->Initialize(
-			UCustomGrassPrimitiveComponent::FInitConfig(
-				GrassDataAsset->GrassMaterial,
-				GrassDataAsset->GrassMaterial_NoTwoSided,
-				i
-			),
+			UCustomGrassPrimitiveComponent::FInitConfig(Material, i),
 			LandscapeTile,
 			*GrassDataAsset
 		);
