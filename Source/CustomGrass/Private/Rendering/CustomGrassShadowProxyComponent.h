@@ -21,18 +21,36 @@ public:
 	};
 	
 	explicit UCustomGrassShadowProxyComponent(const FObjectInitializer& ObjectInitializer);
+	
 	static UCustomGrassShadowProxyComponent* Make(
 		const FInitConfig& Config,
 		const UCustomGrassPrimitiveComponent* ParentGrassTile);
 
 	void UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset);
 
-	void BuildMesh(const UCustomGrassDataAsset& DataAsset);
-
 protected:
+	void BuildMesh();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 PlaneResolution = 64;
 
 	UPROPERTY()
 	TObjectPtr<const UCustomGrassPrimitiveComponent> ParentGrassTile;
+};
+
+class FCustomGrassShadowProxyMeshBuilder
+{
+public:
+	FCustomGrassShadowProxyMeshBuilder(
+		ULandscapeComponent* LandscapeTile, 
+		int32 MeshResolution);
+	
+	UStaticMesh* Build(UObject* Outer) const;
+
+private:
+	UStaticMeshDescription* BuildMeshDescription(const UStaticMesh* Mesh,
+		UObject* Outer) const;
+
+	ULandscapeComponent* LandscapeTile;
+	int32 MeshResolution;
 };
