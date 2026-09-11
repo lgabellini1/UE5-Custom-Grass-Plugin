@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Types.h"
 #include "CustomGrassPrimitiveComponent.generated.h"
 
 class ULandscapeComponent;

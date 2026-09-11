@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "CustomGrassWorldSubsystem.h"
+#include "RenderTypes.h"
 
 /**
  * Custom empty index buffer. In theory, a proper index buffer

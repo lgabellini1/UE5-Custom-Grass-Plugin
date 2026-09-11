@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RenderGraphResources.h"
-#include "CustomGrassRenderTypes.h"
+#include "RenderTypes.h"
 
 struct FVolatileBuffers;
 class FCustomGrassSceneProxy;

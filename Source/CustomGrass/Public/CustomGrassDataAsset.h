@@ -1,8 +1,8 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Utilities.h"
-#include "Rendering/CustomGrassRenderTypes.h"
+#include "Types.h"
+#include "Rendering/RenderTypes.h"
 #include "CustomGrassDataAsset.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoaded);

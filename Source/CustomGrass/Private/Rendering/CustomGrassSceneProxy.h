@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "CustomGrassRenderTypes.h"
+#include "RenderTypes.h"
 
 // struct FWindParams;
 class UCustomGrassPrimitiveComponent;

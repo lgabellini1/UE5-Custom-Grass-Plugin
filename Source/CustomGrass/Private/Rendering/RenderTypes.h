@@ -2,6 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Shared.h"
+#include "Landscape.h"
+#include "LandscapeComponent.h"
+
+class FCustomGrassSceneProxy;
 
 UENUM(BlueprintType)
 enum class EGrassLOD : uint8
@@ -9,8 +13,11 @@ enum class EGrassLOD : uint8
 	LOD0,
 	LOD1,
 	LOD2,
-	NumLODs
+	NumLODs UMETA(Hidden)
 };
+
+ENUM_RANGE_BY_COUNT(EGrassLOD, EGrassLOD::NumLODs);
+constexpr int32 GNumLODs = static_cast<int32>(EGrassLOD::NumLODs);
 
 struct FLODSettings
 {
@@ -18,8 +25,6 @@ struct FLODSettings
 	FIntPoint InstanceCount;
 	float DistanceThreshold;
 };
-
-constexpr int32 GNumLODs = static_cast<int32>(EGrassLOD::NumLODs);
 
 const auto LOD0Settings = FLODSettings(15, FIntPoint(1024, 1024), 100.f);
 const auto LOD1Settings = FLODSettings(7, FIntPoint(1024, 1024), 200.f);
@@ -36,7 +41,6 @@ inline int32 GetGrassBladeTriangleCount(EGrassLOD LOD) { return GetGrassBladeVer
 inline int32 GetGrassBladeIndicesCount(EGrassLOD LOD) { return GetGrassBladeTriangleCount(LOD) + 2; }
 
 inline FIntPoint GetInstanceCount(EGrassLOD LOD) { return GLODSettingsMap[LOD].InstanceCount; }
-
 inline float GetDistanceThreshold(EGrassLOD LOD) { return GLODSettingsMap[LOD].DistanceThreshold; }
 
 static constexpr int32 GIndexedIndirectDrawArgsNum = 5;
@@ -46,27 +50,38 @@ static const FIntPoint GShadowWPOTextureSlotRes = FIntPoint(512, 512);
 static constexpr int32 GShadowWPOAtlasGridSize = GMaxRenderedTiles / 2;
 static const FIntPoint GShadowWPOAtlasRes = GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize;
 
-/**
- * Landscape information needed for rendering. The proxy maintains a
- * copy of data originally stored by the ULandscapeComponent in the game thread.
- */
 struct FProxyLandscapeData
 {
 	FTextureRHIRef HeightmapTexture;
 	FSamplerStateRHIRef HeightmapSampler;
-	FVector4f HeightmapScaleBias;
+	FVector4 HeightmapScaleBias;
 	
 	int32 ComponentSizeQuads;
-	
-	FIntPoint SectionBase;
-
 	FIntPoint TotalSizeInQuads;
-
-	FVector3f BoundingBox;
+	FIntPoint SectionBase;
 	
-	FMatrix44f LocalToWorld;
+	FVector BoundingBox;
+	
+	FMatrix LocalToWorldMatrix;
 
-	float ShadowProxyPlaneHeight;
+	explicit FProxyLandscapeData(const ULandscapeComponent& LandscapeTile)
+	{
+		HeightmapTexture   = LandscapeTile.GetHeightmap()->GetResource()->GetTextureRHI();
+		HeightmapSampler   = TStaticSamplerState<SF_Bilinear>::GetRHI();
+		HeightmapScaleBias = LandscapeTile.HeightmapScaleBias;
+	
+		ComponentSizeQuads = LandscapeTile.ComponentSizeQuads;
+		SectionBase		   = FIntPoint(LandscapeTile.SectionBaseX, LandscapeTile.SectionBaseY);
+
+		FIntRect LandscapeExtent;
+		LandscapeTile.GetLandscapeInfo()->GetLandscapeExtent(LandscapeExtent);
+		TotalSizeInQuads = LandscapeExtent.Max - LandscapeExtent.Min;
+
+		BoundingBox	= LandscapeTile.Bounds.BoxExtent;
+
+		const ALandscape* Landscape = LandscapeTile.GetLandscapeActor();
+		LocalToWorldMatrix = Landscape->GetActorTransform().ToMatrixWithScale();
+	}
 };
 
 struct FWindParams
@@ -78,40 +93,45 @@ struct FWindParams
 	float Time;
 };
 
-/**
- * Static references to resources needed by proxy for
- * rendering. The memory these refs point to is expected to be
- * completely handled by the render system.
- */
 struct FRenderingResourceHandles
 {
 	FShaderResourceViewRHIRef InstanceData;
 	FBufferRHIRef IndirectDrawArgs;
-	int32 TileOffset;
-	float ViewSpaceCorrection;
-	float NormalRoundnessStrength;
-	float ShortHeightThreshold;
-
-	/*
-	FWindParams WindParams;
-	*/
 };
+
+struct FProxyVertexShaderData
+{
+	FRenderingResourceHandles RenderingResources;
+	int32 TileOffset = INDEX_NONE;
+	EGrassLOD LOD;
+
+	FProxyVertexShaderData(FRenderingResourceHandles RenderingResources, EGrassLOD LOD)
+	: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD)
+	{}
+};
+
+namespace CustomGrass
+{
+	struct FVertexShaderParams
+	{
+		float ViewSpaceCorrection;
+		float NormalRoundnessStrength;
+		float ShortHeightThreshold;
+		/* FWindParams WindParams; */
+	};
+}
 
 struct FProxyRenderWorkDesc
 {
 	const FVector ViewOrigin;
 	const FMatrix ViewMatrix;
-	const FProxyLandscapeData LandscapeData;
-	const TSharedRef<FRenderingResourceHandles> ResourceHandles;
-	EGrassLOD LOD;
-	float SortingScore;
-		
-	int32 TileIndex; // for debugging
+	const FCustomGrassSceneProxy* Proxy;
+	TUniquePtr<FProxyVertexShaderData> VSData;
+	float TilePriorityScore;
 		
 	bool operator==(const FProxyRenderWorkDesc& Other) const
 	{
-		return (LandscapeData.SectionBase == Other.LandscapeData.SectionBase)
-			&& (LOD == Other.LOD);
+		return (Proxy == Other.Proxy) && (VSData->LOD == Other.VSData->LOD);
 	}
 };
 
@@ -161,8 +181,6 @@ END_SHADER_PARAMETER_STRUCT()
 
 struct FTileAtlasMapping
 {
-	int32 LandscapeCoordX;
-	int32 LandscapeCoordY;
-	int32 AtlasTileX;
-	int32 AtlasTileY;
+	FIntPoint LandscapeCoord;
+	FIntPoint AtlasTile;
 };
