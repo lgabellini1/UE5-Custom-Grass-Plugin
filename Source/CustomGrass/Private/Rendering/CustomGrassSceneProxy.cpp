@@ -1,79 +1,31 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#include "CustomGrassSceneProxy.h"
+﻿#include "CustomGrassSceneProxy.h"
+#include "Rendering/CustomGrassRenderSystem.h"
 #include "CustomGrassPrimitiveComponent.h"
-#include "CustomGrassShadowProxyComponent.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
 #include "CustomGrassVertexFactory.h"
 #include "RenderGraphUtils.h"
 
-FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent* InComponent,
-                                               FCustomGrassRenderSystem* InRenderSystem, int32 Index)
-: FPrimitiveSceneProxy(InComponent, FName(
-	FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(Index) + FString(TEXT("]")))),
-TileIndex(Index), RenderSystem(InRenderSystem)
-{
-	const auto Material = InComponent->GetMaterial();
-	ensure(Material, "CustomGrass: Material is NULL!");
-
-	const EShaderPlatform ShaderPlatform = GetScene().GetShaderPlatform();
-	
-	MaterialConfig = FMaterialConfig(Material.Material, ShaderPlatform);
-	NoTwoSideMaterialConfig = FMaterialConfig(Material.MaterialNoTwoSides, ShaderPlatform);
-	
-	const ULandscapeComponent* LandscapeTile = InComponent->GetAssociatedLandscapeTile();
-	BuildLandscapeData(LandscapeTile);
-	
-	//.ShadowProxyPlaneHeight = InComponent->ShadowProxy->GetComponentTransform().GetLocation().Z;
-	
-	// @note: this code assumes that the landscape does not change at runtime, and
-	// it's position remains unchanged!
-}
-
-void FCustomGrassSceneProxy::BuildLandscapeData(const ULandscapeComponent* LandscapeTile)
-{
-	check(LandscapeTile);
-
-	FIntRect LandscapeExtent;
-	LandscapeTile->GetLandscapeInfo()->GetLandscapeExtent(LandscapeExtent);
-	FIntPoint TotalLandscapeQuads = LandscapeExtent.Max - LandscapeExtent.Min;
-	
-	// Maintaining a reference should be fine as it's a RHI resource,
-	// i.e. a render-thread resource. Same goes for sampler.
-	LandscapeData.HeightmapTexture	 = LandscapeTile->GetHeightmap()->GetResource()->GetTextureRHI();
-	LandscapeData.HeightmapSampler	 = TStaticSamplerState<SF_Bilinear>::GetRHI();
-	LandscapeData.HeightmapScaleBias = FVector4f(LandscapeTile->HeightmapScaleBias);
-	LandscapeData.ComponentSizeQuads = LandscapeTile->ComponentSizeQuads;
-	LandscapeData.SectionBase		 = FIntPoint(LandscapeTile->SectionBaseX, LandscapeTile->SectionBaseY);
-	LandscapeData.LocalToWorld		 = FMatrix44f(LandscapeTile->GetLandscapeActor()->GetActorTransform().ToMatrixWithScale());
-	LandscapeData.BoundingBox		 = FVector3f(LandscapeTile->Bounds.BoxExtent);
-	LandscapeData.TotalSizeInQuads	 = TotalLandscapeQuads;
-	
-	LandscapeData.ShadowProxyPlaneHeight = InComponent->ShadowProxy->GetComponentTransform().GetLocation().Z;
-	
-	// @note: this code assumes that the landscape does not change at runtime, and
-	// it's position remains unchanged!
-}
+FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent& Component,
+                                               FCustomGrassRenderSystem* RenderSystem, int32 TileIndex)
+	: FPrimitiveSceneProxy(&Component, FName(
+		FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(TileIndex) + FString(TEXT("]")))),
+	TileIndex(TileIndex), RenderSystem(RenderSystem),
+	LandscapeData(CustomGrass::FProxyLandscapeData(Component.GetAssociatedLandscapeTile())),
+	MaterialConfig(Component.GetMaterial().TwoSided, GetScene().GetShaderPlatform()),
+	NoTwoSideMaterialConfig(Component.GetMaterial().NoTwoSided, GetScene().GetShaderPlatform())
+{}
 
 void FCustomGrassSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
 {
-	VertexFactory = new FCustomGrassVertexFactory(GetScene().GetFeatureLevel());
+	VertexFactory = MakeUnique<FCustomGrassVertexFactory>(GetScene().GetFeatureLevel());
 	VertexFactory->InitResource(RHICmdList);
-	
-	ResourceHandles = MakeShared<FRenderingResourceHandles>(
-		RenderSystem->GetBufferHandles_RenderThread());
 }
 
 void FCustomGrassSceneProxy::DestroyRenderThreadResources()
 {
-	check(VertexFactory);
-	
 	VertexFactory->ReleaseResource();
-	delete VertexFactory;
-	VertexFactory = nullptr;
-
-	ResourceHandles = nullptr;	
+	VertexFactory.Reset();
 }
 
 FPrimitiveViewRelevance FCustomGrassSceneProxy::GetViewRelevance(const FSceneView* View) const
@@ -92,7 +44,6 @@ FPrimitiveViewRelevance FCustomGrassSceneProxy::GetViewRelevance(const FSceneVie
 	Relevance.bVelocityRelevance	 = false;
 	
 	MaterialConfig.MaterialRelevance.SetPrimitiveViewRelevance(Relevance);
-//	NoTwoSideMaterialConfig.MaterialRelevance.SetPrimitiveViewRelevance(Relevance);
 	return Relevance;
 }
 
@@ -109,72 +60,45 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 		if (VisibilityMap & (1 << ViewIndex))
 		{
 			const FSceneView* View = Views[ViewIndex];
-
-			// Will be assigned by render system
-			EGrassLOD LOD;
 			
-			RenderSystem->AddRenderingWork(View, &LandscapeData,
-				ResourceHandles.ToSharedRef(), this, LOD);
-
-			if (FrameStamp != GFrameCounterRenderThread)
-				break;
-			
-			CachedLOD.store(LOD);
-
-#if DEBUG_LOG_TILE_LOD
-			if (GEngine)
+			if (const CustomGrass::FProxyVertexShaderData* VSData = RenderSystem->AddProxyRenderingWork(*this, View))
 			{
-				GEngine->AddOnScreenDebugMessage(0, 1.0f, FColor::Yellow,
-					*FString::Printf(TEXT("GrassTile LOD: %i"), static_cast<int32>(LOD)));
+				CustomGrass::EGrassLOD LOD = VSData->LOD;
+				CachedLOD.store(LOD);
+
+				FMeshBatch& Mesh = Collector.AllocateMesh();
+				Mesh.MaterialRenderProxy =
+					static_cast<int32>(LOD) < 2 ? MaterialConfig.MaterialProxy : NoTwoSideMaterialConfig.MaterialProxy;
+				Mesh.VertexFactory = VertexFactory.Get();
+				Mesh.Type = PT_TriangleStrip;
+
+				Mesh.bUseForMaterial  = true;
+				Mesh.bUseForDepthPass = true;
+				Mesh.CastShadow		  = true;
+
+				Mesh.Elements.SetNumZeroed(1);
+				FMeshBatchElement& BatchElement = Mesh.Elements[0];
+
+				BatchElement.IndexBuffer = VertexFactory->GetIndexBuffer(LOD);
+			
+				BatchElement.IndirectArgsBuffer = VSData->RenderingResources.IndirectDrawArgs;
+				BatchElement.IndirectArgsOffset = 0;
+			
+				BatchElement.PrimitiveUniformBuffer = GetUniformBuffer();
+
+				BatchElement.FirstIndex		= 0;
+				BatchElement.NumPrimitives  = 0; // means "use indirect args"
+				BatchElement.MinVertexIndex = 0;
+				BatchElement.MaxVertexIndex = 0;
+
+				auto* BatchUserData = &Collector.AllocateOneFrameResource<FCustomGrassBatchUserData>();
+				BatchUserData->VSData = VSData;
+				BatchUserData->DataAssetParams = RenderSystem->GetVertexShaderDataAssetParams();
+			
+				BatchElement.UserData = BatchUserData;
+			
+				Collector.AddMesh(ViewIndex, Mesh);
 			}
-#endif
-
-			FMeshBatch& Mesh = Collector.AllocateMesh();
-			Mesh.MaterialRenderProxy = static_cast<int32>(LOD) < 2
-				? MaterialConfig.MaterialProxy
-				: NoTwoSideMaterialConfig.MaterialProxy;
-			Mesh.VertexFactory = VertexFactory;
-			Mesh.Type = PT_TriangleStrip;
-
-			Mesh.bUseForMaterial  = true;
-			Mesh.bUseForDepthPass = true;
-			Mesh.CastShadow		  = true;
-
-			Mesh.Elements.SetNumZeroed(1);
-			FMeshBatchElement& BatchElement = Mesh.Elements[0];
-
-			BatchElement.IndexBuffer = VertexFactory->GetIndexBuffer(LOD);
-			
-			BatchElement.IndirectArgsBuffer = ResourceHandles->IndirectDrawArgs;
-			BatchElement.IndirectArgsOffset = 0;
-			
-			BatchElement.PrimitiveUniformBuffer = GetUniformBuffer();
-
-			BatchElement.FirstIndex		= 0;
-			BatchElement.NumPrimitives  = 0; // means "use indirect args"
-			BatchElement.MinVertexIndex = 0;
-			BatchElement.MaxVertexIndex = 0;
-
-			auto* BatchUserData = &Collector.AllocateOneFrameResource<FCustomGrassBatchUserData>();
-			BatchUserData->ResourceHandles = ResourceHandles.Get();
-			BatchUserData->LOD = LOD;
-			
-			BatchElement.UserData = BatchUserData;
-			/*
-			VSParams->InstanceDataBuffer = ResourceHandles->InstanceData;
-			VSParams->TileOffset		 = ResourceHandles->TileOffset;
-			
-			VSParams->WindParams = ResourceHandles->WindParams;
-
-			VSParams->ViewSpaceCorrection = ResourceHandles->ViewSpaceCorrection;
-
-			VSParams->NormalRoundnessStrength = ResourceHandles->NormalRoundnessStrength;
-
-			VSParams->ShortHeightThreshold = ResourceHandles->ShortHeightThreshold;
-			*/
-
-			check(BatchElement.IndexBuffer);
-			Collector.AddMesh(ViewIndex, Mesh);			
 		}
 	}
 }
@@ -187,36 +111,15 @@ SIZE_T FCustomGrassSceneProxy::GetTypeHash() const
 
 uint32 FCustomGrassSceneProxy::GetMemoryFootprint() const
 {
-	return sizeof(*this) + FPrimitiveSceneProxy::GetAllocatedSize();
+	return sizeof(*this) + GetAllocatedSize();
 }
 
-FVector GetTileCenter(const FProxyLandscapeData& LandscapeData)
+FCustomGrassSceneProxy::FMaterialConfig::FMaterialConfig(
+	const UMaterialInterface* Material,
+	EShaderPlatform ShaderPlatform)
 {
-	float QuadSize = LandscapeData.LocalToWorld.GetScaleVector().X;
-
-	FVector2f TileCenterInQuads = FVector2f(LandscapeData.SectionBase) + LandscapeData.ComponentSizeQuads * 0.5f;
-
-	return FVector(LandscapeData.LocalToWorld.GetOrigin() + FVector3f(TileCenterInQuads * QuadSize, 0.f));
-}
-
-FVector GetTileExtent(const FProxyLandscapeData& LandscapeData)
-{
-	return FVector(LandscapeData.BoundingBox);
-}
-
-FVector GetClosestPointToTile(const FSceneView* View, const FProxyLandscapeData& LandscapeData)
-{
-	FVector Camera = View->ViewMatrices.GetViewOrigin();
-
-	FVector TileCenter = GetTileCenter(LandscapeData);
-	FVector TileExtent = GetTileExtent(LandscapeData);
+	check(Material);
 	
-	FVector TileMin = TileCenter - TileExtent;
-	FVector TileMax = TileCenter + TileExtent;
-
-	return FVector(
-		FMath::Clamp(Camera.X, TileMin.X, TileMax.X),
-		FMath::Clamp(Camera.Y, TileMin.Y, TileMax.Y),
-		FMath::Clamp(Camera.Z, TileMin.Z, TileMax.Z)
-	);
+	MaterialProxy	  = Material->GetRenderProxy(), 
+	MaterialRelevance = Material->GetRelevance_Concurrent(ShaderPlatform);
 }

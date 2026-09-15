@@ -121,28 +121,29 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 {
 	auto* BatchUserData = static_cast<const FCustomGrassBatchUserData*>(BatchElement.UserData);
 	
-	const FRenderingResourceHandles* Handles = BatchUserData->ResourceHandles;
-	check(Handles);
+	const CustomGrass::FProxyVertexShaderData* VSData = BatchUserData->VSData;
+	check(VSData);
 
-	// Skip invalid tile
-	if (Handles->TileOffset == INDEX_NONE)
+	const CustomGrass::FVertexShaderParams DataAssetParams = BatchUserData->DataAssetParams;
+
+	if (VSData->TileOffset == INDEX_NONE)
 		return;
 	
-	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = Handles->IndirectDrawArgs;
+	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = VSData->RenderingResources.IndirectDrawArgs;
 	
-	ShaderBindings.Add(InstanceDataBuffer, Handles->InstanceData);
-	ShaderBindings.Add(TileOffset, Handles->TileOffset);
-	ShaderBindings.Add(GrassBladeVertexCount, GetGrassBladeVertexCount(BatchUserData->LOD));
-	ShaderBindings.Add(LOD, static_cast<int32>(BatchUserData->LOD));
+	ShaderBindings.Add(InstanceDataBuffer, VSData->RenderingResources.InstanceData);
+	ShaderBindings.Add(TileIndex, VSData->TileOffset);
+	ShaderBindings.Add(GrassBladeVertexCount, CustomGrass::GetGrassBladeVertexCount(VSData->LOD));
+	ShaderBindings.Add(LOD, static_cast<int32>(VSData->LOD));
 
-	ShaderBindings.Add(MaxGrassHeight, GMaxGrassBladeHeight);
-	ShaderBindings.Add(MaxGrassWidth, GMaxGrassBladeWidth);
-	ShaderBindings.Add(MaxGrassTilt, GMaxGrassBladeTilt);
-	ShaderBindings.Add(MaxGrassBend, GMaxGrassBladeBend);
+	ShaderBindings.Add(MaxGrassHeight, CustomGrass::MaxGrassBladeHeight);
+	ShaderBindings.Add(MaxGrassWidth, CustomGrass::MaxGrassBladeWidth);
+	ShaderBindings.Add(MaxGrassTilt, CustomGrass::MaxGrassBladeTilt);
+	ShaderBindings.Add(MaxGrassBend, CustomGrass::MaxGrassBladeBend);
 
-	ShaderBindings.Add(ViewSpaceCorrection, Handles->ViewSpaceCorrection);
-	ShaderBindings.Add(NormalRoundnessStrength, Handles->NormalRoundnessStrength);
-	ShaderBindings.Add(ShortHeightThreshold, Handles->ShortHeightThreshold);
+	ShaderBindings.Add(ViewSpaceCorrection, DataAssetParams.ViewSpaceCorrection);
+	ShaderBindings.Add(NormalRoundnessStrength, DataAssetParams.NormalRoundnessStrength);
+	ShaderBindings.Add(ShortHeightThreshold, DataAssetParams.ShortHeightThreshold);
 	
 	/*
 	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);

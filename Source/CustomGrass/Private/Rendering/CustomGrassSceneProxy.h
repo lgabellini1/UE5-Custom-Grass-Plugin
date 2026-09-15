@@ -3,27 +3,22 @@
 #include "CoreMinimal.h"
 #include "RenderTypes.h"
 
+struct FCustomGrassMaterial;
+class ULandscapeComponent;
 // struct FWindParams;
 class UCustomGrassPrimitiveComponent;
 class FCustomGrassRenderSystem;
 class FCustomGrassVertexFactory;
 
-FVector GetTileCenter(const FProxyLandscapeData& LandscapeData);
-
-FVector GetTileExtent(const FProxyLandscapeData& LandscapeData);
-
-FVector GetClosestPointToTile(const FSceneView* View, const FProxyLandscapeData& LandscapeData);
-
-
 class FCustomGrassSceneProxy final : public FPrimitiveSceneProxy
 {
 public:
-	FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent* InComponent,
-		FCustomGrassRenderSystem* InRenderSystem, int32 Index);
+	FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent& Component,
+		FCustomGrassRenderSystem* RenderSystem, int32 TileIndex);
 
 	EGrassLOD GetGrassLOD() const { return CachedLOD.load(); }
 
-	void StampNextFrame_RenderThread() const { FrameStamp = GFrameCounterRenderThread + 1; }
+	const CustomGrass::FProxyLandscapeData& GetLandscapeData() const { return LandscapeData; }
 
 	const int32 TileIndex;
 
@@ -41,14 +36,8 @@ protected:
 	
 	virtual SIZE_T GetTypeHash() const override;
 	virtual uint32 GetMemoryFootprint() const override;
-
-	
-	// Last frame where this grass tile was selected for rendering.
-	mutable uint64 FrameStamp = MAX_uint64;
 	
 	FCustomGrassRenderSystem* RenderSystem;
-
-	TSharedPtr<FRenderingResourceHandles, ESPMode::ThreadSafe> ResourceHandles;
 
 	// 'mutable' allows to cache it in GetDynamicMeshElements() (to elude const)
 	mutable std::atomic<EGrassLOD> CachedLOD = EGrassLOD::NumLODs;
@@ -56,12 +45,15 @@ protected:
 	/** Render-thread copy of landscape data useful to shaders. */
 	FProxyLandscapeData LandscapeData;
 	
-	FCustomGrassVertexFactory* VertexFactory;
+	TUniquePtr<FCustomGrassVertexFactory> VertexFactory;
 	
 	struct FMaterialConfig
 	{
 		FMaterialRenderProxy* MaterialProxy;
 		FMaterialRelevance MaterialRelevance;
+
+		FMaterialConfig(const UMaterialInterface* Material,
+			EShaderPlatform ShaderPlatform);
 	};
 
 	FMaterialConfig MaterialConfig, NoTwoSideMaterialConfig;

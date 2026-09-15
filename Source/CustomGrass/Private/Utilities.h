@@ -1,33 +1,22 @@
 ﻿#pragma once
 
+namespace CustomGrass { struct FProxyLandscapeData; }
 class ALandscape;
+class ULandscapeComponent;
 
-FVector2D GetLandscapeExtentInWorldUnits(const ALandscape* Landscape);
-
-template <class T>
-struct TRandomVariationValue<T>
+namespace CustomGrass
 {
-	static_assert(TIsArithmetic<T>::Value,
-		"T must be of arithmetic type");
-	
-	T Value;
-	float VariationPercentage;
-};
+	FVector2D GetLandscapeExtentInWorldUnits(const ALandscape& Landscape);
 
-// UObject version of the above struct for the editor.
-USTRUCT(BlueprintType)
-struct FRandomVariationFloatProperty
-{
-	GENERATED_BODY()
+	FVector GetLandscapeTileOrigin(const ULandscapeComponent& LandscapeTile);
+	FVector GetLandscapeTileOrigin(const FProxyLandscapeData& LandscapeData);
 
-	UPROPERTY(EditAnywhere)
-	float Value;
+	FVector GetLandscapeTileExtent(const ULandscapeComponent& LandscapeTile);
+	FVector GetLandscapeTileExtent(const FProxyLandscapeData& LandscapeData);
 
-	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="1.0"))
-	float VariationPercentage;
+	FVector GetNearestTileBoundsPointFromCamera(const FSceneView* View,
+		const FProxyLandscapeData& LandscapeData);
 
-	TRandomVariationValue<float> ToValue() const
-	{
-		return TRandomVariationValue(Value, VariationPercentage);
-	}
-};
+	bool IsTileOutsideViewFrustum(const FSceneView* View,
+		const FProxyLandscapeData& LandscapeData);
+}

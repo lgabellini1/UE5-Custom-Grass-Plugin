@@ -3,12 +3,27 @@
 #include "CoreMinimal.h"
 #include "RenderGraphResources.h"
 #include "RenderTypes.h"
+#include "ShaderTypes.h"
+#include "Types.h"
 
-struct FVolatileBuffers;
+namespace CustomGrass
+{
+	struct FVolatileBuffers;
+	class FShadowParams;
+}
 class FCustomGrassSceneProxy;
 class UCustomGrassDataAsset;
 
-/** Render-thread copy of the data asset. */
+/*
+ * Order of execution is roughly:
+ * -> engine renderer module calls GetDynamicMeshElements() on each FCustomGrassSceneProxy
+ *    (gathers mesh elements, passes resources to vertex factory / shader, etc...);
+ * -> BeginFrame() callback runs on FCustomGrassRenderSystem: compute shaders get dispatched
+ * -> compute pass
+ * -> draw call execution
+ * -> EndFrame() callback
+ */
+
 struct FDataAssetProxy
 {
 	explicit FDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
@@ -40,68 +55,69 @@ struct FDataAssetProxy
 	EGrassLOD GlobalLOD;
 };
 
+namespace CustomGrass
+{
+	struct FProxyRenderWorkDesc
+	{
+		FVector ViewOrigin;
+		FMatrix ViewMatrix;
+		const FCustomGrassSceneProxy* Proxy;
+		TUniquePtr<FProxyVertexShaderData> VSData;
+		float TilePriorityScore;
+		
+		bool operator==(const FProxyRenderWorkDesc& Other) const
+		{
+			return (Proxy == Other.Proxy) && (VSData->LOD == Other.VSData->LOD);
+		}
+	};
+}
+
 class FCustomGrassRenderSystem
 {
 	using FRDGPooledBufferRef  = TRefCountPtr<FRDGPooledBuffer>;
 	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
 public:
-	FCustomGrassRenderSystem();
+	explicit FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset);
 
 	~FCustomGrassRenderSystem();
 	
-	/** Called by renderer before rendering frame: submits accumulated rendering work. */ 
 	void BeginFrame(FRDGBuilder& GraphBuilder);
-
-	/** Called by renderer after rendering frame: cleanup of rendering resources. */ 
 	void EndFrame(FRDGBuilder& GraphBuilder);
 
-	/**
-	 * Called by proxies to register themselves for rendering work.
-	 */ 
-	void AddRenderingWork(const FSceneView* View, 
-		const FProxyLandscapeData* LandscapeData,
-		const TSharedRef<FRenderingResourceHandles>& ResourceHandles,
-		const FCustomGrassSceneProxy* Proxy,
-		EGrassLOD& InLOD);
-
-	FRenderingResourceHandles GetBufferHandles_RenderThread() const;
-
-	/*void SetGrassDensityRTResource_RenderThread(const FTextureRenderTargetResource* RTResource);*/
+	CustomGrass::FProxyVertexShaderData* AddProxyRenderingWork(
+		const FCustomGrassSceneProxy& Proxy,
+		const FSceneView* View);
 	
-	/*void SetMaxDisplacement_RenderThread(float NewVal) { MaxDisplacement = NewVal; }*/
-
-	void NotifyRunningStateFromGameThread(bool bNewGTRunningState);
+	CustomGrass::FVertexShaderParams GetVertexShaderDataAssetParams() const;
 
 	void RebuildRenderState(const UCustomGrassDataAsset& DataAsset);
 
-	void UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D* ShadowMap) const;
+	void UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D& ShadowMap) const;
 
 protected:
-
-	bool bRunningState = false, bGTRunningState = false;
-	bool bResourcesInitialized = false;
-	bool bHasActiveSelection = false;
-
 	bool IsRunning() const;
+	
+	bool bRunningState,
+	bResourcesInitialized;
 	
 	FCriticalSection AddRenderingWorkCS;
 	
-	TArray<FProxyRenderWorkDesc> QueuedWork;
-
-	TArray<FProxyRenderWorkDesc> PreviousFrameWork;
-	FMatrix PreviousFrameViewMatrix;
-
-	static bool IsPreviousFrameView(const FMatrix& ThisFrameView, const FMatrix& PrevFrameView);
-
-	void SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBuffers& InBuffers, const TArray<FProxyRenderWorkDesc>& Work);
-
-	void InitPerFrameResources(FRDGBuilder& GraphBuilder, FVolatileBuffers& OutBuffers) const;
-
-	void InitGrassParams();
+	TArray<CustomGrass::FProxyRenderWorkDesc> NextFrameQueuedWork, SelectedWork;
 	
-	static float CalcTileSortingScore(const FSceneView* View,
-		const FProxyLandscapeData& LandscapeData);
+	TArray<CustomGrass::FProxyRenderWorkDesc> CreateWorkSelectionFromQueue();
+
+	bool IsViewSameBetweenFrames() const;
+
+	void SubmitWork(FRDGBuilder& GraphBuilder, const CustomGrass::FVolatileBuffers& Buffers);
+
+	CustomGrass::FVolatileBuffers CreatePerFrameResources(FRDGBuilder& GraphBuilder) const;
+
+	float CalcTilePriorityScore(const FSceneView* View,
+		const CustomGrass::FProxyLandscapeData& LandscapeData) const;
+
+	CustomGrass::EGrassLOD AssignTileLOD(const FSceneView* View,
+		const CustomGrass::FProxyLandscapeData& LandscapeData) const;
 	
 	/**
 	 * Each of these buffers is made up of several "partitions", one
@@ -115,38 +131,17 @@ protected:
 	 */
 	FRDGPooledBufferRef InstanceDataBuffer;
 
-	TStaticArray<FRDGPooledBufferRef, GMaxRenderedTiles> IndirectDrawArgsBuffer;
+	TStaticArray<FRDGPooledBufferRef, CustomGrass::MaxRenderedTiles> IndirectDrawArgsBuffer;
 
-	const FRDGBufferDesc InstanceDataBufferDesc = FRDGBufferDesc::CreateStructuredDesc(
-		sizeof(FGrassBladeDataPacked),
-		GMaxRenderedTiles * GetInstanceCount(EGrassLOD::LOD0).X * GetInstanceCount(EGrassLOD::LOD0).Y);
-
-	const FRDGBufferDesc IndirectDrawArgsDesc = FRDGBufferDesc::CreateIndirectDesc(
-		sizeof(uint32), GIndexedIndirectDrawArgsNum);
-	
-	const FRDGTextureDesc DensityAccumAtlasDesc = FRDGTextureDesc::Create2D(
-		GShadowWPOTextureSlotRes * GShadowWPOAtlasGridSize,
-		PF_R16_UINT,
-		FClearValueBinding::Black,
-		TexCreate_ShaderResource | TexCreate_UAV
-	);
-
-	FRDGPooledTextureRef ShadowWPOTextureAtlas;
+	FRDGPooledTextureRef ShadowMapTextureAtlas;
 
 	FRDGBufferRef TileAtlasMappingBuffer;
-	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder, const TArray<FProxyRenderWorkDesc>& Work);
+	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder);
 	
-	/**
-	 * Representation of the data asset as cached on the render-thread.
-	 */
-	TOptional<FDataAssetProxy> DataAssetProxy;
+	FDataAssetProxy DataAssetProxy;
+	void BuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
 	
-	void RebuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
-	
-	FGrassParams GrassParams;
-	
-	/** Cached heightmap SRVs for this frame. */
-	TStaticArray<FRDGTextureSRVRef, GMaxRenderedTiles> TileHeightmaps;
+	TStaticArray<FRDGTextureSRVRef, CustomGrass::MaxRenderedTiles> TileHeightmaps;
 
 	float MaxDisplacement;
 
@@ -170,8 +165,8 @@ protected:
 	 */
 	void AddComputePass_InstanceGrassBlades(
 		FRDGBuilder& GraphBuilder,
-		const FProxyRenderWorkDesc& Work,
-		const FVolatileBuffers& InBuffers,
+		const CustomGrass::FProxyRenderWorkDesc& Work,
+		const CustomGrass::FVolatileBuffers& Buffers,
 		int32 TileIndex
 	) const;
 
@@ -181,8 +176,8 @@ protected:
 	 */
 	void AddComputePass_InitIndirectDrawArgs(
 		FRDGBuilder& GraphBuilder,
-		const FProxyRenderWorkDesc& Work,
-		const FVolatileBuffers& InBuffers,
+		const CustomGrass::FProxyRenderWorkDesc& Work,
+		const CustomGrass::FVolatileBuffers& Buffers,
 		int32 TileIndex
 	) const;
 };
