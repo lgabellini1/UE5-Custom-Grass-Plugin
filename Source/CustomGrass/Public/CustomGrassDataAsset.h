@@ -5,11 +5,32 @@
 #include "Rendering/RenderTypes.h"
 #include "CustomGrassDataAsset.generated.h"
 
-DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetLoaded);
-inline FOnGrassDataAssetLoaded GrassDataAssetLoaded;
+namespace CustomGrass
+{
+	DECLARE_MULTICAST_DELEGATE(FOnDataAssetLoaded);
+	inline FOnDataAssetLoaded DataAssetLoaded;
 
-DECLARE_MULTICAST_DELEGATE(FOnGrassDataAssetValuesChanged)
-inline FOnGrassDataAssetValuesChanged GrassDataAssetValuesChanged;
+	DECLARE_MULTICAST_DELEGATE(FOnDataAssetValuesChanged)
+	inline FOnDataAssetValuesChanged DataAssetValuesChanged;
+}
+
+// Reflection-compatible version of the TRandomVariationValue struct for the editor.
+USTRUCT(BlueprintType)
+struct FRandomVariationFloatProperty
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere)
+	float Value;
+
+	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="1.0"))
+	float VariationPercentage;
+
+	TRandomVariationValue<float> ToValue() const
+	{
+		return TRandomVariationValue(Value, VariationPercentage);
+	}
+};
 
 UCLASS()
 class UCustomGrassDataAsset : public UDataAsset
@@ -74,7 +95,10 @@ public:
 	UPROPERTY(EditAnywhere, Category="Rendering")
 	float MaxRenderDistance = 1000.f;
 
-	UPROPERTY(EditAnywhere,	Category="Rendering", DisplayName="Grass Material (No TwoSided)")
+	UPROPERTY(EditAnywhere, Category="Rendering")
+	float TilePriorityDistancePenalty = 0.001f;
+
+	UPROPERTY(EditAnywhere,	Category="Rendering", DisplayName="Grass Material (No Two-sided)")
 	TObjectPtr<UMaterialInterface> GrassMaterial_NoTwoSided = nullptr;
 
 	UPROPERTY(EditAnywhere, Category="Rendering")
@@ -82,7 +106,7 @@ public:
 
 	UPROPERTY(EditAnywhere, Category="Rendering", meta=(
 		EditCondition="bFixedLOD == true"))
-	EGrassLOD GlobalLOD = EGrassLOD::LOD0;
+	CustomGrass::EGrassLOD GlobalLOD = CustomGrass::EGrassLOD::LOD0;
 	
 	
 	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")

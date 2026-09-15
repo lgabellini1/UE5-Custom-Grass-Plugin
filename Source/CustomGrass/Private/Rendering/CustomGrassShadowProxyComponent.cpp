@@ -2,8 +2,12 @@
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassPrimitiveComponent.h"
 #include "StaticMeshDescription.h"
-#include "Landscape.h"
 #include "StaticMeshOperations.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Landscape.h"
+#include "Constants.h"
+#include "CustomGrassWorldSubsystem.h"
+#include "Utilities.h"
 
 UCustomGrassShadowProxyComponent::UCustomGrassShadowProxyComponent(const FObjectInitializer& ObjectInitializer)
 	: UStaticMeshComponent(ObjectInitializer)
@@ -20,19 +24,21 @@ UCustomGrassShadowProxyComponent::UCustomGrassShadowProxyComponent(const FObject
 	bEvaluateWorldPositionOffsetInRayTracing = true;
 }
 
-UCustomGrassShadowProxyComponent* UCustomGrassShadowProxyComponent::Make(const FInitConfig& Config,
-	const UCustomGrassPrimitiveComponent* ParentGrassTile)
+UCustomGrassShadowProxyComponent* UCustomGrassShadowProxyComponent::Make(
+	const UCustomGrassDataAsset& DataAsset,
+	int32 TileIndex,
+	const UCustomGrassPrimitiveComponent& ParentGrassTile)
 {
 	auto* ShadowProxy = NewObject<UCustomGrassShadowProxyComponent>(
 		GetOwner(),
 		UCustomGrassShadowProxyComponent::StaticClass(),
-		*FString::Printf(TEXT("CustomGrassShadowProxy_[%d]"), Config.TileIndex)
+		*FString::Printf(TEXT("CustomGrassShadowProxy_[%d]"), TileIndex)
 	);
 
-	ShadowProxy->PlaneResolution = Config.PlaneMeshResolution;
-	ShadowProxy->SetMaterial(0, Config.Material);
+	ShadowProxy->PlaneResolution = DataAsset.ShadowProxyResolution;
+	ShadowProxy->SetMaterial(0, CreateMID(DataAsset, ParentGrassTile));
 
-	ShadowProxy->ParentGrassTile = ParentGrassTile;
+	ShadowProxy->ParentGrassTile = &ParentGrassTile;
 
 	return ShadowProxy;
 }
@@ -48,19 +54,47 @@ void UCustomGrassShadowProxyComponent::UpdateRenderSettings(const UCustomGrassDa
 
 void UCustomGrassShadowProxyComponent::BuildMesh()
 {
-	const auto LandscapeComponent = ParentGrassTile->GetAssociatedLandscapeTile();
+	ULandscapeComponent& LandscapeTile = ParentGrassTile->GetAssociatedLandscapeTile();
 
-	const auto MeshBuilder = FCustomGrassShadowProxyMeshBuilder(LandscapeComponent, PlaneResolution);
+	const auto MeshBuilder = FCustomGrassShadowProxyMeshBuilder(LandscapeTile, PlaneResolution);
 	UStaticMesh* Mesh = MeshBuilder.Build(this);
 
-	UMaterialInterface* Material = GetMaterial(0);
-	Mesh->GetStaticMaterials().Add(FStaticMaterial(Material));
+	Mesh->GetStaticMaterials().Add(FStaticMaterial(GetMaterial(0)));
 	
 	SetStaticMesh(Mesh);
 }
 
+UMaterialInstanceDynamic* UCustomGrassShadowProxyComponent::CreateMID(
+	const UCustomGrassDataAsset& DataAsset,
+	const UCustomGrassPrimitiveComponent& ParentGrassTile)
+{
+	auto* World = ParentGrassTile.GetWorld();
+	
+	auto* ShadowProxyMID = UMaterialInstanceDynamic::Create(
+		DataAsset.ShadowProxyMaterial, World);
+
+	const auto Subsystem = World->GetSubsystemChecked<UCustomGrassWorldSubsystem>();
+	
+	ShadowProxyMID->SetTextureParameterValue(
+		TEXT("ShadowWPOTextureAtlas"), Subsystem->GetShadowMapTextureAtlas());
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("AtlasGridSize"), CustomGrass::MaxRenderedTiles / 2);
+
+	const auto* LandscapeActor = ParentGrassTile.GetAssociatedLandscapeTile().GetLandscapeActor();
+	
+	ShadowProxyMID->SetVectorParameterValue(
+		TEXT("LandscapeWorldOrigin"), FLinearColor(LandscapeActor->GetActorLocation()));
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("LandscapeWorldSize"), CustomGrass::GetLandscapeExtentInWorldUnits(*LandscapeActor).X);
+	
+	ShadowProxyMID->SetScalarParameterValue(
+		TEXT("MaxGrassHeight"), CustomGrass::MaxGrassBladeHeight);	
+		
+	return ShadowProxyMID;	
+}
+
 FCustomGrassShadowProxyMeshBuilder::FCustomGrassShadowProxyMeshBuilder(
-	ULandscapeComponent* LandscapeTile,
+	ULandscapeComponent& LandscapeTile,
 	int32 MeshResolution)
 : LandscapeTile(LandscapeTile), MeshResolution(MeshResolution)
 {}
@@ -93,17 +127,15 @@ UStaticMeshDescription* FCustomGrassShadowProxyMeshBuilder::BuildMeshDescription
 	const UStaticMesh* Mesh, 
 	UObject* Outer) const
 {
-	check(LandscapeTile);
-
 	UStaticMeshDescription* Desc = Mesh->CreateStaticMeshDescription(Outer);
     const FPolygonGroupID PolyGroup = Desc->CreatePolygonGroup();
 
 	const int32 NumQuads = MeshResolution;
 	const int32 NumVerts = NumQuads + 1;
 
-	const int32 LandscapeQuads = LandscapeTile->ComponentSizeQuads;
+	const int32 LandscapeQuads = LandscapeTile.ComponentSizeQuads;
 
-	const FLandscapeComponentDataInterface LandscapeDataInterface(LandscapeTile);
+	const FLandscapeComponentDataInterface LandscapeDataInterface(&LandscapeTile);
 
 	TArray<FVertexID> Vertices;
 	Vertices.Reserve(NumVerts * NumVerts);

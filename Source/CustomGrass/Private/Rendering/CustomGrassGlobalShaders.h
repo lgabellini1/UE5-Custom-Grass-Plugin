@@ -25,8 +25,6 @@ class FInstanceGrassBladeCS : public FGlobalShader
 	SHADER_USE_PARAMETER_STRUCT(FInstanceGrassBladeCS, FGlobalShader);
 
 public:
-	static inline const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
-	
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters);
 
 	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters,

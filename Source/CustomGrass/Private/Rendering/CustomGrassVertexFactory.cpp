@@ -1,14 +1,8 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#include "CustomGrassVertexFactory.h"
-
-#include <devicetopology.h>
-
+﻿#include "CustomGrassVertexFactory.h"
 #include "CustomGrassSceneProxy.h"
 #include "LandscapeRender.h"
 #include "MeshDrawShaderBindings.h"
 #include "MeshMaterialShader.h"
-#include "SkeletonTreeBuilder.h"
 
 IMPLEMENT_VERTEX_FACTORY_TYPE(FCustomGrassVertexFactory, "/CustomShaders/VertexFactory.ush", FCustomGrassVertexFactory::Flags);
 
@@ -17,28 +11,40 @@ IMPLEMENT_TYPE_LAYOUT(FCustomGrassVertexFactoryShaderParams);
 IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(FCustomGrassVertexFactory, SF_Vertex, FCustomGrassVertexFactoryShaderParams);
 IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(FCustomGrassVertexFactory, SF_Pixel, FCustomGrassVertexFactoryShaderParams);
 
+void FCustomGrassIndexBuffer::InitRHI(FRHICommandListBase& RHICmdList)
+{
+	// Implementation taken from RawIndexBuffer.cpp
+		
+	TResourceArray<uint16, INDEXBUFFER_ALIGNMENT> Indices;
+	Indices.SetNumUninitialized(NumIndices);
+		
+	for (uint16 i = 0; i < NumIndices; i++)
+	{
+		Indices[i] = i;
+	}
+
+	const FRHIBufferCreateDesc BufferDesc = FRHIBufferCreateDesc::CreateIndex(TEXT("CustomGrassIndexBuffer"),
+		Indices.GetResourceDataSize(), sizeof(uint16))
+	.SetInitialState(ERHIAccess::VertexOrIndexBuffer | ERHIAccess::SRVMask)
+	.SetInitActionResourceArray(&Indices);
+
+	IndexBufferRHI = RHICmdList.CreateBuffer(BufferDesc);
+}
+
 FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
 	: FVertexFactory(InFeatureLevel)
 {
-	for (int32 LOD = 0; LOD < GNumLODs; LOD++)
+	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
 	{
-		IndexBuffers[LOD] = new FCustomGrassIndexBuffer(static_cast<EGrassLOD>(LOD));
-	}
-}
-
-FCustomGrassVertexFactory::~FCustomGrassVertexFactory()
-{
-	for (const FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
-	{
-		delete IndexBuffer;
+		IndexBuffers[static_cast<int32>(LOD)] = MakeUnique<FCustomGrassIndexBuffer>(LOD);
 	}
 }
 
 void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 {
-	for (FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
+	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
 	{
-		IndexBuffer->InitResource(RHICmdList);
+		IndexBuffers[static_cast<int32>(LOD)]->InitResource(RHICmdList);
 	}
 
 	FVertexStream NullVertexStream;
@@ -56,9 +62,9 @@ void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 
 void FCustomGrassVertexFactory::ReleaseRHI()
 {
-	for (FCustomGrassIndexBuffer* IndexBuffer : IndexBuffers)
+	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
 	{
-		IndexBuffer->ReleaseResource();
+		IndexBuffers[static_cast<int32>(LOD)]->ReleaseResource();
 	}
 
 	FVertexFactory::ReleaseRHI();
@@ -89,7 +95,7 @@ bool FCustomGrassVertexFactory::ShouldCompilePermutation(const FVertexFactorySha
 void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& ParameterMap)
 {
 	InstanceDataBuffer.Bind(ParameterMap, TEXT("InInstanceDataBuffer"));
-	TileOffset.Bind(ParameterMap, TEXT("TileOffset"));
+	TileIndex.Bind(ParameterMap, TEXT("TileOffset"));
 	GrassBladeVertexCount.Bind(ParameterMap, TEXT("GrassBladeVertexCount"));
 	LOD.Bind(ParameterMap, TEXT("LOD"));
 	

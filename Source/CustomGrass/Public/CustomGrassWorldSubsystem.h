@@ -28,10 +28,15 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	
+	
 	virtual TStatId GetStatId() const override { return TStatId(); }
 	
 	FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem.Get(); }
+	
+	const UCustomGrassDataAsset& GetDataAsset() const { return *GrassDataAsset; }
 
+	UTextureRenderTarget2D* GetShadowMapTextureAtlas() { return ShadowMapTextureAtlas; }
+	
 protected:
 	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
 	
@@ -43,10 +48,9 @@ protected:
 		Rendering    = 1 << 2
 	};
 
-	FORCEINLINE EDirtyFlags  operator|(EDirtyFlags, EDirtyFlags) const;
-	FORCEINLINE EDirtyFlags& operator|=(EDirtyFlags&, EDirtyFlags) const;
-	FORCEINLINE EDirtyFlags  operator&(EDirtyFlags, EDirtyFlags) const;
-	
+	friend EDirtyFlags  operator|(EDirtyFlags, EDirtyFlags);
+	friend EDirtyFlags& operator|=(EDirtyFlags&, EDirtyFlags);
+	friend EDirtyFlags  operator&(EDirtyFlags, EDirtyFlags);
 	
 	UPROPERTY()
 	TArray<TObjectPtr<ULandscapeComponent>> RegisteredLandscapeTiles;
@@ -56,7 +60,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UCustomGrassDataAsset> GrassDataAsset;
-	
 
 	EDirtyFlags DirtyFlags = EDirtyFlags::None;
 	void MarkDirty(EDirtyFlags Flags);
@@ -73,10 +76,8 @@ protected:
 	void UpdateComponents();
 	void SpawnComponents();
 	void DespawnComponents();
-
 	
 	UPROPERTY()
-	TObjectPtr<UTextureRenderTarget2D> ShadowWPOTextureAtlas;
-	
+	TObjectPtr<UTextureRenderTarget2D> ShadowMapTextureAtlas;
 	void CreateShadowMapTextureAtlas();
 };

@@ -14,9 +14,9 @@ void FInstanceGrassBladeCS::ModifyCompilationEnvironment(const FGlobalShaderPerm
 	FShaderCompilerEnvironment& Environment)
 {
 	FGlobalShader::ModifyCompilationEnvironment(Parameters, Environment);
-		
-	SET_SHADER_DEFINE(Environment, THREADS_X, GroupThreadCount.X);
-	SET_SHADER_DEFINE(Environment, THREADS_Y, GroupThreadCount.Y);
+	
+	SET_SHADER_DEFINE(Environment, THREADS_X, CustomGrass::GroupThreadCount.X);
+	SET_SHADER_DEFINE(Environment, THREADS_Y, CustomGrass::GroupThreadCount.Y);
 }
 
 bool FInitIndirectDrawArgsCS::ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)

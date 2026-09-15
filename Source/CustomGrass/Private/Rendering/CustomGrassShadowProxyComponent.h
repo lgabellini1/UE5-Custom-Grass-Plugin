@@ -13,23 +13,20 @@ class UCustomGrassShadowProxyComponent : public UStaticMeshComponent
 	GENERATED_BODY()
 
 public:
-	struct FInitConfig
-	{
-		int32 PlaneMeshResolution;
-		int32 TileIndex;
-		UMaterialInterface* Material;
-	};
-	
 	explicit UCustomGrassShadowProxyComponent(const FObjectInitializer& ObjectInitializer);
 	
 	static UCustomGrassShadowProxyComponent* Make(
-		const FInitConfig& Config,
-		const UCustomGrassPrimitiveComponent* ParentGrassTile);
+		const UCustomGrassDataAsset& DataAsset,
+		int32 TileIndex,
+		const UCustomGrassPrimitiveComponent& ParentGrassTile);
 
 	void UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset);
 
 protected:
 	void BuildMesh();
+
+	static UMaterialInstanceDynamic* CreateMID(const UCustomGrassDataAsset& DataAsset,
+		const UCustomGrassPrimitiveComponent& ParentGrassTile);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 PlaneResolution = 64;
@@ -42,7 +39,7 @@ class FCustomGrassShadowProxyMeshBuilder
 {
 public:
 	FCustomGrassShadowProxyMeshBuilder(
-		ULandscapeComponent* LandscapeTile, 
+		ULandscapeComponent& LandscapeTile, 
 		int32 MeshResolution);
 	
 	UStaticMesh* Build(UObject* Outer) const;
@@ -51,6 +48,6 @@ private:
 	UStaticMeshDescription* BuildMeshDescription(const UStaticMesh* Mesh,
 		UObject* Outer) const;
 
-	ULandscapeComponent* LandscapeTile;
+	ULandscapeComponent& LandscapeTile;
 	int32 MeshResolution;
 };

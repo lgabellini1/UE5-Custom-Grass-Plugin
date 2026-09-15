@@ -636,3 +636,37 @@ void FCustomGrassRenderSystem::UpdateShadowMapResourceFromGameThread(UTextureRen
 		}
 	);
 }
+
+FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
+{
+	Height = DataAsset.Height.ToValue();
+	Width  = DataAsset.Width.ToValue();
+	Tilt   = DataAsset.Tilt.ToValue();
+	Bend   = DataAsset.Bend.ToValue();
+			
+	ClumpGridSize		= DataAsset.ClumpGridSize;
+	ClumpStrength		= DataAsset.ClumpStrength.ToValue();
+	ClumpFacingType		= DataAsset.ClumpFacingType;
+	ClumpFacingStrength	= DataAsset.ClumpFacingStrength;
+			
+	ShortHeightThreshold		= DataAsset.ShortHeightThreshold;
+			
+	ViewSpaceCorrection			= DataAsset.ViewSpaceCorrection;
+			
+	NormalRoundnessStrength		= DataAsset.NormalRoundnessStrength;
+			
+	MaxRenderDistance			= DataAsset.MaxRenderDistance;
+
+	TilePriorityDistancePenalty = DataAsset.TilePriorityDistancePenalty;
+
+	bShadowsOn			= DataAsset.bShadowsEnabled;
+	ShadowProxyZOffset	= DataAsset.ShadowProxyZOffset;
+
+	bFixedLOD = DataAsset.bFixedLOD;
+	GlobalLOD = DataAsset.GlobalLOD;
+
+	const FTextureRHIRef NoiseTexture = DataAsset.NoiseTexture
+		? DataAsset.NoiseTexture->GetResource()->GetTextureRHI() : GBlackTexture->GetTextureRHI();
+	WindParams = CustomGrass::FWindParams(NoiseTexture, TStaticSamplerState<SF_Point>::GetRHI(),
+		DataAsset.WindDirection.GetSafeNormal(), DataAsset.WindStrength, 0.f);
+}

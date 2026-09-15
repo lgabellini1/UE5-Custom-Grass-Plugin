@@ -9,14 +9,20 @@ enum class EClumpFacingType : uint8
 	OppositeClumpCenter
 };
 
+USTRUCT()
 struct FCustomGrassMaterial
 {
-	UMaterialInterface* Material;
-	UMaterialInterface* MaterialNoTwoSides;
+	GENERATED_BODY()
+	
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> TwoSided;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> NoTwoSided;
 
 	explicit operator bool() const
 	{
-		return Material && MaterialNoTwoSides;
+		return TwoSided && NoTwoSided;
 	}
 };
 
@@ -28,22 +34,4 @@ struct TRandomVariationValue<T>
 	
 	T Value;
 	float VariationPercentage;
-};
-
-// Reflected version of the above struct for the editor.
-USTRUCT(BlueprintType)
-struct FRandomVariationFloatProperty
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere)
-	float Value;
-
-	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="1.0"))
-	float VariationPercentage;
-
-	TRandomVariationValue<float> ToValue() const
-	{
-		return TRandomVariationValue(Value, VariationPercentage);
-	}
 };

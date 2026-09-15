@@ -46,13 +46,15 @@ struct FDataAssetProxy
 		
 	float MaxRenderDistance;
 
+	float TilePriorityDistancePenalty;
+
 	bool bShadowsOn;
 	float ShadowProxyZOffset;
 
-	FWindParams WindParams;
+	CustomGrass::FWindParams WindParams;
 
 	bool bFixedLOD;
-	EGrassLOD GlobalLOD;
+	CustomGrass::EGrassLOD GlobalLOD;
 };
 
 namespace CustomGrass

@@ -4,6 +4,6 @@
 void UCustomGrassDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
-	GrassDataAssetValuesChanged.Broadcast();
+	CustomGrass::DataAssetValuesChanged.Broadcast();
 }
 #endif

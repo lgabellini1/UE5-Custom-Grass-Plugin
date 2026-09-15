@@ -1,6 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "RenderTypes.h"
@@ -12,50 +10,17 @@
 class FCustomGrassIndexBuffer : public FIndexBuffer
 {
 public:
-	explicit FCustomGrassIndexBuffer(EGrassLOD LOD)
+	explicit FCustomGrassIndexBuffer(CustomGrass::EGrassLOD LOD)
 	: LOD(LOD), NumIndices(GetGrassBladeIndicesCount(LOD))
 	{}
 	
-	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
-	{
-		// Taken from RawIndexBuffer.cpp
-		
-		TResourceArray<uint16, INDEXBUFFER_ALIGNMENT> Indices;
-		Indices.SetNumUninitialized(NumIndices);
-		
-		for (uint16 i = 0; i < NumIndices; i++)
-		{
-			Indices[i] = i;
-		}
+	virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 
-		const FRHIBufferCreateDesc BufferDesc = FRHIBufferCreateDesc::CreateIndex(TEXT("CustomGrassIndexBuffer"),
-			Indices.GetResourceDataSize(), sizeof(uint16))
-		.SetInitialState(ERHIAccess::VertexOrIndexBuffer | ERHIAccess::SRVMask)
-		.SetInitActionResourceArray(&Indices);
-
-		IndexBufferRHI = RHICmdList.CreateBuffer(BufferDesc);
-	}
-
-	const EGrassLOD LOD;
+	const CustomGrass::EGrassLOD LOD;
 
 protected:
 	int32 NumIndices;
 };
-
-struct FCustomGrassBatchUserData : public FOneFrameResource
-{
-	/*
-	FShaderResourceViewRHIRef InstanceDataBuffer;
-	int32 TileOffset;
-	FWindParams WindParams;
-	float ViewSpaceCorrection;
-	float NormalRoundnessStrength;
-	float ShortHeightThreshold;
-	*/
-	const FRenderingResourceHandles* ResourceHandles;
-	EGrassLOD LOD;
-};
-
 
 class FCustomGrassVertexFactory : public FVertexFactory
 {
@@ -63,8 +28,6 @@ class FCustomGrassVertexFactory : public FVertexFactory
 
 public:
 	explicit FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel);
-
-	virtual ~FCustomGrassVertexFactory() override;
 
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 	virtual void ReleaseRHI() override;
@@ -76,19 +39,17 @@ public:
 	static void ValidateCompiledResult(const FVertexFactoryType* Type, EShaderPlatform Platform,
 		const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
 
-	FIndexBuffer* GetIndexBuffer(EGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)]; }
+	FIndexBuffer* GetIndexBuffer(CustomGrass::EGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)].Get(); }
 	
 	static constexpr EVertexFactoryFlags Flags =
 		EVertexFactoryFlags::UsedWithMaterials	
-//	  | EVertexFactoryFlags::SupportsStaticLighting    
 	  |	EVertexFactoryFlags::SupportsDynamicLighting
 	  |	EVertexFactoryFlags::SupportsManualVertexFetch
 	  | EVertexFactoryFlags::SupportsCachingMeshDrawCommands;
 
 protected:
-	TStaticArray<FCustomGrassIndexBuffer*, GNumLODs> IndexBuffers;
+	TStaticArray<TUniquePtr<FCustomGrassIndexBuffer>, CustomGrass::NumLODs> IndexBuffers;
 };
-
 
 class FCustomGrassVertexFactoryShaderParams : public FVertexFactoryShaderParameters
 {
@@ -110,7 +71,7 @@ public:
 
 protected:
 	LAYOUT_FIELD(FShaderResourceParameter, InstanceDataBuffer);
-	LAYOUT_FIELD(FShaderParameter, TileOffset);
+	LAYOUT_FIELD(FShaderParameter, TileIndex);
 	LAYOUT_FIELD(FShaderParameter, GrassBladeVertexCount);
 	LAYOUT_FIELD(FShaderParameter, LOD);
 

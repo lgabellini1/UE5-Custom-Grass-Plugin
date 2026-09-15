@@ -16,7 +16,7 @@ public:
 	FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent& Component,
 		FCustomGrassRenderSystem* RenderSystem, int32 TileIndex);
 
-	EGrassLOD GetGrassLOD() const { return CachedLOD.load(); }
+	CustomGrass::EGrassLOD GetGrassLOD() const { return CachedLOD.load(); }
 
 	const CustomGrass::FProxyLandscapeData& GetLandscapeData() const { return LandscapeData; }
 
@@ -40,10 +40,10 @@ protected:
 	FCustomGrassRenderSystem* RenderSystem;
 
 	// 'mutable' allows to cache it in GetDynamicMeshElements() (to elude const)
-	mutable std::atomic<EGrassLOD> CachedLOD = EGrassLOD::NumLODs;
+	mutable std::atomic<CustomGrass::EGrassLOD> CachedLOD = CustomGrass::EGrassLOD::NumLODs;
 
-	/** Render-thread copy of landscape data useful to shaders. */
-	FProxyLandscapeData LandscapeData;
+	/** Render-thread copy of landscape data. */
+	CustomGrass::FProxyLandscapeData LandscapeData;
 	
 	TUniquePtr<FCustomGrassVertexFactory> VertexFactory;
 	
