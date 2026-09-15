@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "ShaderParameterStruct.h"
-#include "RenderTypes.h"
+#include "ShaderTypes.h"
 
 class FInstanceGrassBladeCS : public FGlobalShader
 {
@@ -15,25 +15,9 @@ class FInstanceGrassBladeCS : public FGlobalShader
 		SHADER_PARAMETER(FVector4f, ViewOrigin)
 		SHADER_PARAMETER(FMatrix44f, ViewProjectionMatrix)
 		SHADER_PARAMETER(float, MaxRenderDistance)
-		SHADER_PARAMETER(FVector4f, HeightmapScaleBias)
-		SHADER_PARAMETER(int32, TileSizeInQuads)
-		SHADER_PARAMETER(int32, QuadOffsetFromOriginX)
-		SHADER_PARAMETER(int32, QuadOffsetFromOriginY)	
-		SHADER_PARAMETER(int32, LandscapeSizeInQuadsX)
-		SHADER_PARAMETER(int32, LandscapeSizeInQuadsY)
-		SHADER_PARAMETER(FMatrix44f, LandscapeLocalToWorld)
-		SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D<float4>, HeightmapTexture)
-		SHADER_PARAMETER_SAMPLER(SamplerState, HeightmapSampler)
-		SHADER_PARAMETER(int32, bShadowsOn)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, OutShadowWPOTextureAtlas)
-		SHADER_PARAMETER(int32, AtlasOffsetX)
-		SHADER_PARAMETER(int32, AtlasOffsetY)
-		SHADER_PARAMETER(int32, AtlasSlotSize)
-		SHADER_PARAMETER(int32, AtlasGridSize)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FTileAtlasMapping>, TileAtlasMapping)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<uint>, OutDensityAccum)
-		SHADER_PARAMETER(float, ProxyZOffset)
-		SHADER_PARAMETER_STRUCT(FGrassParams, GrassParams)
+		SHADER_PARAMETER_STRUCT(CustomGrass::FLandscapeParams, LandscapeParams)
+		SHADER_PARAMETER_STRUCT(CustomGrass::FShadowParams, ShadowParams)
+		SHADER_PARAMETER_STRUCT(CustomGrass::FGrassParams, GrassParams)
 	END_SHADER_PARAMETER_STRUCT()
 	
 	DECLARE_EXPORTED_GLOBAL_SHADER(FInstanceGrassBladeCS, );

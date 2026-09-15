@@ -3,6 +3,8 @@
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassGlobalShaders.h"
 #include "RenderGraphUtils.h"
+#include "ShaderTypes.h"
+#include "Utilities.h"
 #include "Engine/TextureRenderTarget2D.h"
 
 FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
@@ -427,27 +429,71 @@ void FCustomGrassRenderSystem::SubmitWork(FRDGBuilder& GraphBuilder, FVolatileBu
 	}
 }
 
-void FCustomGrassRenderSystem::InitGrassParams()
+CustomGrass::FGrassParams FCustomGrassRenderSystem::BuildGrassParams() const
 {
-	GrassParams.Height				= DataAssetProxy.Height.Val;
-	GrassParams.Width				= DataAssetProxy.Width.Val;
-	GrassParams.Tilt				= DataAssetProxy.Tilt.Val;
-	GrassParams.Bend				= DataAssetProxy.Bend.Val;
-	GrassParams.ClumpStrength		= DataAssetProxy.ClumpStrength.Val;
+	CustomGrass::FGrassParams GrassParams;
+	
+	GrassParams.Height				= DataAssetProxy.Height.Value;
+	GrassParams.Width				= DataAssetProxy.Width.Value;
+	GrassParams.Tilt				= DataAssetProxy.Tilt.Value;
+	GrassParams.Bend				= DataAssetProxy.Bend.Value;
+	GrassParams.ClumpStrength		= DataAssetProxy.ClumpStrength.Value;
 	GrassParams.ClumpGridSize		= DataAssetProxy.ClumpGridSize;
 	GrassParams.ClumpFacingType		= static_cast<uint8>(DataAssetProxy.ClumpFacingType);
 	GrassParams.ClumpFacingStrength = DataAssetProxy.ClumpFacingStrength;
 
-	GrassParams.MaxHeight = GMaxGrassBladeHeight;
-	GrassParams.MaxWidth  = GMaxGrassBladeWidth;
-	GrassParams.MaxTilt	  = GMaxGrassBladeTilt;
-	GrassParams.MaxBend   = GMaxGrassBladeBend;
+	GrassParams.MaxHeight = CustomGrass::MaxGrassBladeHeight;
+	GrassParams.MaxWidth  = CustomGrass::MaxGrassBladeWidth;
+	GrassParams.MaxTilt	  = CustomGrass::MaxGrassBladeTilt;
+	GrassParams.MaxBend   = CustomGrass::MaxGrassBladeBend;
 
-	GrassParams.RandHeight		  = DataAssetProxy.Height.Random;
-	GrassParams.RandWidth		  = DataAssetProxy.Width.Random;
-	GrassParams.RandTilt		  = DataAssetProxy.Tilt.Random;
-	GrassParams.RandBend		  = DataAssetProxy.Bend.Random;
-	GrassParams.RandClumpStrength = DataAssetProxy.ClumpStrength.Random;	
+	GrassParams.RandHeight		  = DataAssetProxy.Height.VariationPercentage;
+	GrassParams.RandWidth	 	  = DataAssetProxy.Width.VariationPercentage;
+	GrassParams.RandTilt		  = DataAssetProxy.Tilt.VariationPercentage;
+	GrassParams.RandBend		  = DataAssetProxy.Bend.VariationPercentage;
+	GrassParams.RandClumpStrength = DataAssetProxy.ClumpStrength.VariationPercentage;
+
+	return GrassParams;
+}
+
+CustomGrass::FShadowParams FCustomGrassRenderSystem::BuildShadowParams(
+	FRDGBuilder& GraphBuilder,
+	int32 TileIndex,
+	const CustomGrass::FVolatileBuffers& Buffers) const
+{
+	CustomGrass::FShadowParams ShadowParams;
+	
+	ShadowParams.bShadowsOn				  = static_cast<int32>(DataAssetProxy.bShadowsOn);
+	ShadowParams.OutShadowWPOTextureAtlas = Buffers.ShadowMapTextureAtlas.UAV;
+	ShadowParams.AtlasOffsetX			  = (TileIndex % CustomGrass::ShadowMapAtlasGridSize)
+		* CustomGrass::ShadowMapTextureSlotResolution.X;
+	ShadowParams.AtlasOffsetY			  = (TileIndex / CustomGrass::ShadowMapAtlasGridSize)
+		* CustomGrass::ShadowMapTextureSlotResolution.Y;
+	ShadowParams.AtlasSlotSize			  = CustomGrass::ShadowMapTextureSlotResolution.X;
+	ShadowParams.AtlasGridSize			  = CustomGrass::ShadowMapAtlasGridSize;
+	ShadowParams.TileAtlasMapping		  = GraphBuilder.CreateSRV(TileAtlasMappingBuffer);
+	ShadowParams.ProxyZOffset			  = DataAssetProxy.ShadowProxyZOffset;
+	ShadowParams.OutDensityAccum		  = Buffers.DensityAccumTextureAtlas.UAV;
+
+	return ShadowParams;
+}
+
+CustomGrass::FLandscapeParams FCustomGrassRenderSystem::BuildLandscapeParams(int32 TileIndex,
+	const CustomGrass::FProxyLandscapeData& LandscapeTile) const
+{
+	CustomGrass::FLandscapeParams LandscapeParams;
+	
+	LandscapeParams.TileSizeInQuads		  = LandscapeTile.ComponentSizeQuads;
+	LandscapeParams.LandscapeSizeInQuadsX = LandscapeTile.TotalSizeInQuads.X;
+	LandscapeParams.LandscapeSizeInQuadsY = LandscapeTile.TotalSizeInQuads.Y;
+	LandscapeParams.QuadOffsetFromOriginX = LandscapeTile.SectionBase.X;
+	LandscapeParams.QuadOffsetFromOriginY = LandscapeTile.SectionBase.Y;
+	LandscapeParams.LandscapeLocalToWorld = FMatrix44f(LandscapeTile.LocalToWorldMatrix);
+	LandscapeParams.HeightmapTexture	  = TileHeightmaps[TileIndex];
+	LandscapeParams.HeightmapSampler	  = LandscapeTile.HeightmapSampler;
+	LandscapeParams.HeightmapScaleBias    = FVector4f(LandscapeTile.HeightmapScaleBias);
+
+	return LandscapeParams;
 }
 
 void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
@@ -492,26 +538,9 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 #endif
 	Params->ViewOrigin			  = FVector4f(FLinearColor(Work.ViewOrigin));
 	Params->MaxRenderDistance	  = DataAssetProxy.MaxRenderDistance;
-	Params->HeightmapScaleBias    = Tile.HeightmapScaleBias;
-	Params->TileSizeInQuads		  = Tile.ComponentSizeQuads;
-	Params->LandscapeSizeInQuadsX = Tile.TotalSizeInQuads.X;
-	Params->LandscapeSizeInQuadsY = Tile.TotalSizeInQuads.Y;
-	Params->QuadOffsetFromOriginX = Tile.SectionBase.X;
-	Params->QuadOffsetFromOriginY = Tile.SectionBase.Y;
-	Params->LandscapeLocalToWorld = Tile.LocalToWorld;
-	Params->HeightmapTexture	  = TileHeightmaps[TileIndex];
-	Params->HeightmapSampler   = Tile.HeightmapSampler;
-	Params->GrassParams			  = GrassParams;
-
-	Params->bShadowsOn		 = static_cast<int32>(DataAssetProxy.bShadowsOn);
-	Params->OutShadowWPOTextureAtlas = InBuffers.ShadowWPOTextureAtlasUAV;
-	Params->AtlasOffsetX     = (TileIndex % GShadowWPOAtlasGridSize) * GShadowWPOTextureSlotRes.X;
-	Params->AtlasOffsetY     = (TileIndex / GShadowWPOAtlasGridSize) * GShadowWPOTextureSlotRes.Y;
-	Params->AtlasSlotSize    = GShadowWPOTextureSlotRes.X;
-	Params->AtlasGridSize	 = GShadowWPOAtlasGridSize;
-	Params->TileAtlasMapping = GraphBuilder.CreateSRV(TileAtlasMappingBuffer);
-	Params->ProxyZOffset     = DataAssetProxy.ShadowProxyZOffset;
-	Params->OutDensityAccum  = InBuffers.DensityAccumTextureAtlasUAV;
+	Params->LandscapeParams		  = BuildLandscapeParams(TileIndex, Tile);
+	Params->GrassParams			  = BuildGrassParams();
+	Params->ShadowParams		  = BuildShadowParams(GraphBuilder, TileIndex, Buffers);
 
 	if (DataAssetProxy.bShadowsOn)
 	{

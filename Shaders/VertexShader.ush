@@ -1,4 +1,4 @@
-﻿#include "Shared.ush"
+﻿#include "Types.ush"
 
 // On its own file to keep the actual VS implementation separate from
 // factory boilerplate code. 

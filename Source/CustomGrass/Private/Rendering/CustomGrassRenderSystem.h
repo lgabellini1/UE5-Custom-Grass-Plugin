@@ -149,6 +149,19 @@ protected:
 	TStaticArray<FRDGTextureSRVRef, GMaxRenderedTiles> TileHeightmaps;
 
 	float MaxDisplacement;
+
+	CustomGrass::FRenderingResourceHandles CreateNewResourceHandles();
+
+	CustomGrass::FGrassParams BuildGrassParams() const;
+	
+	CustomGrass::FShadowParams BuildShadowParams(
+		FRDGBuilder& GraphBuilder,
+		int32 TileIndex,
+		const CustomGrass::FVolatileBuffers& Buffers) const;
+	
+	CustomGrass::FLandscapeParams BuildLandscapeParams(
+		int32 TileIndex,
+		const CustomGrass::FProxyLandscapeData& LandscapeTile) const;
 	
 	/**
 	 * Dispatches a compute shader for instancing grass blade data

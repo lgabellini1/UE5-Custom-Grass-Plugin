@@ -1,6 +1,6 @@
 ﻿#include "/Engine/Public/Platform.ush"
 #include "/Engine/Private/Common.ush"
-#include "Shared.ush"
+#include "Utilities.ush"
 
 /* COMPUTE SHADER #1: instance grass blades */
 
@@ -31,22 +31,19 @@ float4x4 ViewProjectionMatrix;
 /** Used for culling far grass blades. */
 float MaxRenderDistance;
 
-/* All landscape data (except the heightmap texture). */
-//cbuffer SceneLandscapeData
-//{
-float4 HeightmapScaleBias;
+// ------------- Landscape parameters --------------------
 
-int TileSizeInQuads;
-int QuadOffsetFromOriginX;
-int QuadOffsetFromOriginY;
-int LandscapeSizeInQuadsX;
-int LandscapeSizeInQuadsY;
+int LandscapeParams_TileSizeInQuads;
+int LandscapeParams_QuadOffsetFromOriginX;
+int LandscapeParams_QuadOffsetFromOriginY;
+int LandscapeParams_LandscapeSizeInQuadsX;
+int LandscapeParams_LandscapeSizeInQuadsY;
 
-float4x4 LandscapeLocalToWorld;
-//}
+float4x4 LandscapeParams_LandscapeLocalToWorld;
 
-Texture2D<float4> HeightmapTexture;
-SamplerState HeightmapSampler;
+Texture2D<float4> LandscapeParams_HeightmapTexture;
+SamplerState LandscapeParams_HeightmapSampler;
+float4 LandscapeParams_HeightmapScaleBias;
 
 
 // ------------- Grass parameters --------------------
@@ -78,25 +75,23 @@ int GrassParams_ClumpGridSize;
 
 // ------------- Shadow parameters --------------------
 
-int bShadowsOn;
+int ShadowParams_bShadowsOn;
 
-RWTexture2D<float2> OutShadowWPOTextureAtlas;
-
-StructuredBuffer<FTileAtlasMapping> TileAtlasMapping;
-
-RWTexture2D<uint> OutDensityAccum;
+RWTexture2D<float2> ShadowParams_OutShadowWPOTextureAtlas;
+StructuredBuffer<FTileAtlasMapping> ShadowParams_TileAtlasMapping;
+RWTexture2D<uint> ShadowParams_OutDensityAccum;
 
 /* Texture offset inside the atlas in texels. */
-int AtlasOffsetX;
-int AtlasOffsetY;
+int ShadowParams_AtlasOffsetX;
+int ShadowParams_AtlasOffsetY;
 
 /* Size of a texture slot inside the atlas. */
-int AtlasSlotSize;
+int ShadowParams_AtlasSlotSize;
 
 /* Number of slots in the atlas on each dimension. */
-int AtlasGridSize;
+int ShadowParams_AtlasGridSize;
 
-float ProxyZOffset;
+float ShadowParams_ProxyZOffset;
 
 
 /**
@@ -124,15 +119,15 @@ bool TestInstanceCulling(FGrassBladeData InstanceData)
  */
 float SampleHeightmap(float2 UV)
 {
-	float2 HeightmapScale = HeightmapScaleBias.xy;
-	float2 HeightmapBias  = HeightmapScaleBias.zw;
+	float2 HeightmapScale = LandscapeParams_HeightmapScaleBias.xy;
+	float2 HeightmapBias  = LandscapeParams_HeightmapScaleBias.zw;
 
-	float2 LocalQuadPos = UV * TileSizeInQuads;
+	float2 LocalQuadPos = UV * LandscapeParams_TileSizeInQuads;
 	float2 SampleUV = (LocalQuadPos + 0.5f) * HeightmapScale + HeightmapBias;
 	
 	// Heightmap uses a 32bit RGBA format,
 	// but only the first two channels represent the actual 16-bit heightmap, so we need to unpack it.
-	float2 PackedHeight = HeightmapTexture.SampleLevel(HeightmapSampler, SampleUV, 0).xy;
+	float2 PackedHeight = LandscapeParams_HeightmapTexture.SampleLevel(LandscapeParams_HeightmapSampler, SampleUV, 0).xy;
 
 	return DecodePackedHeight(PackedHeight);
 }
@@ -143,16 +138,16 @@ float SampleHeightmap(float2 UV)
  */
 float3 GetAbsoluteWorldPos(float2 UV, float LocalHeight)
 {
-	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
+	int2 QuadOffsetFromOrigin = int2(LandscapeParams_QuadOffsetFromOriginX, LandscapeParams_QuadOffsetFromOriginY);
 	
 	// Map position into local quad-space [0..NumQuads].
-	float2 LocalQuadPos = UV * TileSizeInQuads;
+	float2 LocalQuadPos = UV * LandscapeParams_TileSizeInQuads;
 
 	// Rebase local tile position into local landscape position.
 	float2 GlobalQuadPos = LocalQuadPos + QuadOffsetFromOrigin;
 	float3 LocalPos = float3(GlobalQuadPos, LocalHeight);
 
-	return mul(float4(LocalPos, 1.0f), LandscapeLocalToWorld).xyz;
+	return mul(float4(LocalPos, 1.0f), LandscapeParams_LandscapeLocalToWorld).xyz;
 }
 
 /** Apply semi-random jitter to values to break the regular, grid-like distribution in UV space, using noise. */
@@ -266,7 +261,7 @@ float2 FindNearestClumpPoint(float2 GlobalUV)
  */
 float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 {
-	int HeightmapResolution = TileSizeInQuads + 1;
+	int HeightmapResolution = LandscapeParams_TileSizeInQuads + 1;
 	float TexelSize = 1.0f / (float)HeightmapResolution;
 
 	float2 Dxy = LocalHeight - float2(
@@ -274,20 +269,20 @@ float3 ComputeTerrainNormalFromHeightmap(float2 UV, float LocalHeight)
 		SampleHeightmap(UV + float2(0, TexelSize))
 	);
 
-	float2 QuadSizeInUnits = float2(LandscapeLocalToWorld[0][0], LandscapeLocalToWorld[1][1]);
+	float2 QuadSizeInUnits = float2(LandscapeParams_LandscapeLocalToWorld[0][0], LandscapeParams_LandscapeLocalToWorld[1][1]);
 	
 	float3 LocalNormal = float3(Dxy / QuadSizeInUnits, 1.0f);
 	
-	return normalize(mul((float3x3)LandscapeLocalToWorld, LocalNormal));
+	return normalize(mul((float3x3)LandscapeParams_LandscapeLocalToWorld, LocalNormal));
 }
 
 void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 {
-	if (!(bool)bShadowsOn) return;
+	if (!(bool)ShadowParams_bShadowsOn) return;
 	
-	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
-	int2 LandscapeNumTiles	  = LandscapeSizeInQuads / TileSizeInQuads;
-	int2 AtlasOffset		  = int2(AtlasOffsetX, AtlasOffsetY);
+	int2 LandscapeSizeInQuads = int2(LandscapeParams_LandscapeSizeInQuadsX, LandscapeParams_LandscapeSizeInQuadsY);
+	int2 LandscapeNumTiles	  = LandscapeSizeInQuads / LandscapeParams_TileSizeInQuads;
+	int2 AtlasOffset		  = int2(ShadowParams_AtlasOffsetX, ShadowParams_AtlasOffsetY);
 	
 	// Check if FinalUV (the jittered + clumped grass instance position) lies
 	// on a tile in memory.
@@ -296,17 +291,17 @@ void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 
 	uint NumElements;
 	uint Stride;
-	TileAtlasMapping.GetDimensions(NumElements, Stride);
+	ShadowParams_TileAtlasMapping.GetDimensions(NumElements, Stride);
 		
 	int2 AtlasSlot = int2(-1, -1);
 	for (int i = 0; i < NumElements; i++)
 	{
-		bool bTileFound = (TileAtlasMapping[i].LandscapeCoordX == TileCoord.x) &&
-			(TileAtlasMapping[i].LandscapeCoordY == TileCoord.y);
+		bool bTileFound = (ShadowParams_TileAtlasMapping[i].LandscapeCoordX == TileCoord.x) &&
+			(ShadowParams_TileAtlasMapping[i].LandscapeCoordY == TileCoord.y);
 				
 		if (bTileFound)
 		{
-			AtlasSlot = int2(TileAtlasMapping[i].AtlasTileX, TileAtlasMapping[i].AtlasTileY);
+			AtlasSlot = int2(ShadowParams_TileAtlasMapping[i].AtlasTileX, ShadowParams_TileAtlasMapping[i].AtlasTileY);
 			break;
 		}
 	}
@@ -315,15 +310,15 @@ void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 	if (AtlasSlot.x >= 0)
 	{
 		float2 UVInTile = frac(GlobalFinalUV * LandscapeNumTiles);
-		float2 UVInAtlas = (AtlasSlot + UVInTile) / AtlasGridSize;
+		float2 UVInAtlas = (AtlasSlot + UVInTile) / ShadowParams_AtlasGridSize;
 
-		int AtlasRes = AtlasSlotSize * AtlasGridSize;
+		int AtlasRes = ShadowParams_AtlasSlotSize * ShadowParams_AtlasGridSize;
 		int2 AtlasTexel = int2(UVInAtlas * AtlasRes);
 
-		float ShadowHeight = GrassParams_MaxHeight + ProxyZOffset;
+		float ShadowHeight = GrassParams_MaxHeight + ShadowParams_ProxyZOffset;
 
-		if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
-			OutShadowWPOTextureAtlas[AtlasTexel].r = ShadowHeight;
+		if (all(AtlasTexel < AtlasOffset + ShadowParams_AtlasSlotSize))
+			ShadowParams_OutShadowWPOTextureAtlas[AtlasTexel].r = ShadowHeight;
 
 		float CellSize	  = 1.0 / (float)(GrassParams_ClumpGridSize);
 		float DistToClump = length(GlobalFinalUV - ClumpCenterUV) / CellSize;
@@ -331,8 +326,8 @@ void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 		float Density = pow(saturate(1.0 - DistToClump), 2.0);
 		Density = lerp(0.5 * CellSize, Density, saturate(GrassParams_ClumpStrength));
 
-		if (all(AtlasTexel < AtlasOffset + AtlasSlotSize))
-			OutShadowWPOTextureAtlas[AtlasTexel].g = Density;
+		if (all(AtlasTexel < AtlasOffset + ShadowParams_AtlasSlotSize))
+			ShadowParams_OutShadowWPOTextureAtlas[AtlasTexel].g = Density;
 	}
 }
 
@@ -340,11 +335,11 @@ void WriteToShadowWPO(float2 GlobalFinalUV, float2 ClumpCenterUV)
 void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 GroupThreadID : SV_GroupThreadID)
 {
 	int2 InstanceCountPerTile = int2(InstanceCountPerTileX, InstanceCountPerTileY);
-	int2 QuadOffsetFromOrigin = int2(QuadOffsetFromOriginX, QuadOffsetFromOriginY);
-	int2 LandscapeSizeInQuads = int2(LandscapeSizeInQuadsX, LandscapeSizeInQuadsY);
-	int2 AtlasOffset		  = int2(AtlasOffsetX, AtlasOffsetY);
+	int2 QuadOffsetFromOrigin = int2(LandscapeParams_QuadOffsetFromOriginX, LandscapeParams_QuadOffsetFromOriginY);
+	int2 LandscapeSizeInQuads = int2(LandscapeParams_LandscapeSizeInQuadsX, LandscapeParams_LandscapeSizeInQuadsY);
+	int2 AtlasOffset		  = int2(ShadowParams_AtlasOffsetX, ShadowParams_AtlasOffsetY);
 	
-	int2 InstanceCountPerQuad = InstanceCountPerTile / TileSizeInQuads;
+	int2 InstanceCountPerQuad = InstanceCountPerTile / LandscapeParams_TileSizeInQuads;
 
 	int2 GlobalInstancePos = QuadOffsetFromOrigin * InstanceCountPerQuad + (int2)DispatchThreadID.xy;
 
@@ -359,14 +354,14 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 	float2 JitteredUV = ApplyJitter(LocalUVPos, GrassBlade.Hash);
 
 	// Same position as JitteredUV, but relative to the whole landscape
-	float2 GlobalUVPos = (QuadOffsetFromOrigin + JitteredUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads;
+	float2 GlobalUVPos = (QuadOffsetFromOrigin + JitteredUV * LandscapeParams_TileSizeInQuads) / (float2)LandscapeSizeInQuads;
 	
 	float2 ClumpCenterUV = FindNearestClumpPoint(GlobalUVPos);
-	float2 ToClumpCenter = (ClumpCenterUV - GlobalUVPos) * (LandscapeSizeInQuads / TileSizeInQuads);
+	float2 ToClumpCenter = (ClumpCenterUV - GlobalUVPos) * (LandscapeSizeInQuads / LandscapeParams_TileSizeInQuads);
 
 	float RandomClumpStrength = GrassParams_ClumpStrength * HashUIntToFloat(GrassBlade.Hash);
 	float2 FinalUV = JitteredUV + ToClumpCenter * RandomClumpStrength;
-	float2 GlobalFinalUV = saturate((QuadOffsetFromOrigin + FinalUV * TileSizeInQuads) / (float2)LandscapeSizeInQuads);
+	float2 GlobalFinalUV = saturate((QuadOffsetFromOrigin + FinalUV * LandscapeParams_TileSizeInQuads) / (float2)LandscapeSizeInQuads);
 
 	float LandscapeLocalHeight = SampleHeightmap(FinalUV);
 	
