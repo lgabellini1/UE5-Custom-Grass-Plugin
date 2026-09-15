@@ -32,12 +32,6 @@ void UCustomGrassWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	{
 		UE_LOG(LogTemp, Error, TEXT("Grass data asset not found! System will not start."));
 	}
-	
-	RenderSystem = MakeUnique<FCustomGrassRenderSystem>();
-
-	CVarGrassEnabledChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnCVarGrassEnabledChanged);
-	GrassDataAssetLoaded.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetLoaded);
-	GrassDataAssetValuesChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetValuesChanged);
 }
 
 void UCustomGrassWorldSubsystem::CreateShadowMapTextureAtlas()
