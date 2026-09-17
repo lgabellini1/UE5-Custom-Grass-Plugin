@@ -64,7 +64,6 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 			if (const CustomGrass::FProxyVertexShaderData* VSData = RenderSystem->AddProxyRenderingWork(*this, View))
 			{
 				CustomGrass::EGrassLOD LOD = VSData->LOD;
-				CachedLOD.store(LOD);
 
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.MaterialRenderProxy =

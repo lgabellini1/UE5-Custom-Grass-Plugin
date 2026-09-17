@@ -16,7 +16,7 @@ void UCustomGrassSettings::PostEditChangeProperty(FPropertyChangedEvent& Propert
 		if (PropertyChangedEvent.GetPropertyName() ==
 			GET_MEMBER_NAME_CHECKED(UCustomGrassSettings, GrassDataAsset))
 		{
-			GrassDataAssetLoaded.Broadcast();
+			CustomGrass::DataAssetLoaded.Broadcast();
 		}
 	}
 }
