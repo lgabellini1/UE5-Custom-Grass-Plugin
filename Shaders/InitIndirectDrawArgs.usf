@@ -1,0 +1,15 @@
+﻿Buffer<uint> InInstanceCounter;
+RWBuffer<uint> OutIndirectDrawArgsBuffer;
+
+int GrassBladeVertexCount;
+int TileIndex;
+
+[numthreads(1, 1, 1)]
+void CSInitIndirectDrawArgs()
+{
+	OutIndirectDrawArgsBuffer[0] = GrassBladeVertexCount;		 // IndexCountPerInstance
+	OutIndirectDrawArgsBuffer[1] = InInstanceCounter[TileIndex]; // InstanceCount
+	OutIndirectDrawArgsBuffer[2] = 0;							 // StartIndexLocation
+	OutIndirectDrawArgsBuffer[3] = 0;							 // BaseVertexLocation
+	OutIndirectDrawArgsBuffer[4] = 0;							 // StartInstanceLocation
+}

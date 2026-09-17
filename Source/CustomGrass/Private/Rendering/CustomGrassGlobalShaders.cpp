@@ -1,8 +1,10 @@
 ﻿#include "CustomGrassGlobalShaders.h"
 
-IMPLEMENT_GLOBAL_SHADER(FInstanceGrassBladeCS, "/CustomShaders/Compute.usf", "CSInstanceGrassBlades", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInstanceGrassBladeCS, "/CustomShaders/InstanceGrassBlades.usf",
+	"CSInstanceGrassBlades", SF_Compute);
 
-IMPLEMENT_GLOBAL_SHADER(FInitIndirectDrawArgsCS, "/CustomShaders/Compute.usf", "CSInitIndirectDrawArgs", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FInitIndirectDrawArgsCS, "/CustomShaders/InitIndirectDrawArgs.usf",
+	"CSInitIndirectDrawArgs", SF_Compute);
 
 bool FInstanceGrassBladeCS::ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 {

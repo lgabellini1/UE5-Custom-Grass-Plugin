@@ -2,14 +2,11 @@
 #include "/Engine/Private/Common.ush"
 #include "Utilities.ush"
 
-/* COMPUTE SHADER #1: instance grass blades */
-
 RWStructuredBuffer<FGrassBladeDataPacked> OutInstanceDataBuffer;
 
 /** Accumulator for the number of visible instances on each tile. */
 RWBuffer<uint> OutInstanceCounter;
 
-/** Tile offset inside the buffers. */
 int TileIndex;
 
 int InstanceCountPerTileX;
@@ -21,14 +18,9 @@ int InstanceCountPerTileY;
  */
 int BufferRegionSize;
 
-/* Updates on every view-change. */
-//cbuffer CameraData
-//{
 float4 ViewOrigin;
 float4x4 ViewProjectionMatrix;
-//}
 
-/** Used for culling far grass blades. */
 float MaxRenderDistance;
 
 // ------------- Landscape parameters --------------------
@@ -402,22 +394,4 @@ void CSInstanceGrassBlades(uint3 DispatchThreadID : SV_DispatchThreadID, uint3 G
 		OutInstanceDataBuffer[BufferWriteIndex] = PackGrassBladeData(GrassBlade,
 			GrassParams_MaxHeight, GrassParams_MaxWidth, GrassParams_MaxTilt, GrassParams_MaxBend);
 	}
-}
-
-/* COMPUTE SHADER #2: initialize indirect draw args. */
-
-Buffer<uint> InInstanceCounter;
-
-RWBuffer<uint> OutIndirectDrawArgsBuffer;
-
-int GrassBladeVertexCount;
-
-[numthreads(1, 1, 1)]
-void CSInitIndirectDrawArgs()
-{
-	OutIndirectDrawArgsBuffer[0] = GrassBladeVertexCount; // IndexCountPerInstance
-	OutIndirectDrawArgsBuffer[1] = InInstanceCounter[TileIndex]; // InstanceCount
-	OutIndirectDrawArgsBuffer[2] = 0; // StartIndexLocation
-	OutIndirectDrawArgsBuffer[3] = 0; // BaseVertexLocation
-	OutIndirectDrawArgsBuffer[4] = 0; // StartInstanceLocation
 }
