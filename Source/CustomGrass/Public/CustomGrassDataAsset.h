@@ -65,10 +65,10 @@ public:
 	int ClumpGridSize = 25;
 
 	UPROPERTY(EditAnywhere, Category="Appearance|Clumps")
-	EClumpFacingType ClumpFacingType;
+	CustomGrass::EClumpFacingType ClumpFacingType;
 	
 	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", meta=(ClampMin="0.0", ClampMax="1.0",
-		EditCondition="ClumpFacingType != EClumpFacingType::NoClumpFacing"))
+		EditCondition="ClumpFacingType != CustomGrass::EClumpFacingType::NoClumpFacing"))
 	float ClumpFacingStrength;
 
 	

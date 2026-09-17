@@ -35,7 +35,7 @@ struct FDataAssetProxy
 		
 	TRandomVariationValue<float> ClumpStrength;
 	int ClumpGridSize;
-	EClumpFacingType ClumpFacingType;
+	CustomGrass::EClumpFacingType ClumpFacingType;
 	float ClumpFacingStrength;
 		
 	float ShortHeightThreshold;
@@ -72,6 +72,19 @@ namespace CustomGrass
 			return (Proxy == Other.Proxy) && (VSData->LOD == Other.VSData->LOD);
 		}
 	};
+
+	class FTileDebugChannel : TSharedFromThis<FTileDebugChannel, ESPMode::ThreadSafe>
+	{
+	public:
+		void SetDebugStateForWork(int32 WorkIndex, const FProxyRenderWorkDesc& Work);
+
+		void PublishDebugStateSnapshot_RenderThread();
+
+		FRTDebugState GetDebugStateSnapshot_GameThread() const;
+	
+	protected:
+		FRTDebugState DebugState, GTDebugStateSnapshot;
+	};
 }
 
 class FCustomGrassRenderSystem
@@ -84,20 +97,22 @@ public:
 
 	~FCustomGrassRenderSystem();
 	
-	void BeginFrame(FRDGBuilder& GraphBuilder);
-	void EndFrame(FRDGBuilder& GraphBuilder);
-
 	CustomGrass::FProxyVertexShaderData* AddProxyRenderingWork(
 		const FCustomGrassSceneProxy& Proxy,
 		const FSceneView* View);
 	
 	CustomGrass::FVertexShaderParams GetVertexShaderDataAssetParams() const;
 
-	void RebuildRenderState(const UCustomGrassDataAsset& DataAsset);
+	void RebuildRenderStateFromGameThread(const UCustomGrassDataAsset& DataAsset);
 
 	void UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D& ShadowMap) const;
 
+	CustomGrass::FTileDebugChannel TileDebugChannel;
+
 protected:
+	void BeginFrame(FRDGBuilder& GraphBuilder);
+	void EndFrame(FRDGBuilder& GraphBuilder);
+	
 	bool IsRunning() const;
 	
 	bool bRunningState,
@@ -145,8 +160,6 @@ protected:
 	
 	TStaticArray<FRDGTextureSRVRef, CustomGrass::MaxRenderedTiles> TileHeightmaps;
 
-	float MaxDisplacement;
-
 	CustomGrass::FRenderingResourceHandles CreateNewResourceHandles();
 
 	CustomGrass::FGrassParams BuildGrassParams() const;
@@ -160,11 +173,6 @@ protected:
 		int32 TileIndex,
 		const CustomGrass::FProxyLandscapeData& LandscapeTile) const;
 	
-	/**
-	 * Dispatches a compute shader for instancing grass blade data
-	 * in a whole landscape tile.\n
-	 * Writes to the instance data buffer.
-	 */
 	void AddComputePass_InstanceGrassBlades(
 		FRDGBuilder& GraphBuilder,
 		const CustomGrass::FProxyRenderWorkDesc& Work,
@@ -172,10 +180,6 @@ protected:
 		int32 TileIndex
 	) const;
 
-	/**
-	 * Dispatches a compute shader for initializing the indirect draw args buffer.\n
-	 * Dependencies: InstanceGrassBlades compute pass, for the instance count.
-	 */
 	void AddComputePass_InitIndirectDrawArgs(
 		FRDGBuilder& GraphBuilder,
 		const CustomGrass::FProxyRenderWorkDesc& Work,

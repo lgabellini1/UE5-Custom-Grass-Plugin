@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "FCustomGrassDebugVisualizer.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 
 class ALandscape;
@@ -8,10 +9,6 @@ class ULandscapeComponent;
 class UCustomGrassDataAsset;
 class UCustomGrassPrimitiveComponent;
 class FCustomGrassRenderSystem;
-
-#define DEBUG_DRAW_TILE_BOUNDS false
-#define DEBUG_LOG_TILE_LOD false
-#define DEBUG_RENDERED_TILES true
 
 UCLASS()
 class UCustomGrassWorldSubsystem : public UTickableWorldSubsystem
@@ -80,4 +77,6 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UTextureRenderTarget2D> ShadowMapTextureAtlas;
 	void CreateShadowMapTextureAtlas();
+
+	FCustomGrassDebugVisualizer DebugVisualizer;
 };

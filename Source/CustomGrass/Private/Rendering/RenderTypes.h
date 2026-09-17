@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Constants.h"
+#include "Types.h"
 #include "Landscape.h"
 #include "LandscapeComponent.h"
 
@@ -9,17 +10,6 @@ class FCustomGrassSceneProxy;
 
 namespace CustomGrass
 {
-	UENUM(BlueprintType)
-	enum class EGrassLOD : uint8
-	{
-		LOD0,
-		LOD1,
-		LOD2,
-		NumLODs UMETA(Hidden)
-	};
-	
-	constexpr int32 NumLODs = static_cast<int32>(EGrassLOD::NumLODs);
-
 	struct FLODSettings
 	{
 		int32 VertexCount;
@@ -117,8 +107,6 @@ namespace CustomGrass
 		}
 	};
 }
-
-ENUM_RANGE_BY_COUNT(CustomGrass::EGrassLOD, CustomGrass::EGrassLOD::NumLODs);
 
 struct FCustomGrassBatchUserData final : public FOneFrameResource
 {

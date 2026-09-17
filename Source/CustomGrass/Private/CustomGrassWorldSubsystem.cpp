@@ -120,17 +120,6 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 		GrassTileComponent->AttachToComponent(LandscapeTile, FAttachmentTransformRules::KeepRelativeTransform);
 				
 		GrassTiles.Add(GrassTileComponent);
-		
-#if DEBUG_DRAW_TILE_BOUNDS		
-		uint8 Hue = (i * 37) % 255;
-		FColor DebugColor = FLinearColor::MakeFromHSV8(Hue, 200, 255).ToFColor(true);
-		DebugColor.A *= 0.25;
-
-		FBox Bounds = LandscapeTiles[i]->Bounds.GetBox();
-		Bounds = Bounds.ExpandBy(FVector(0, 0, 100.f), FVector(0, 0, 100.f));
-		
-		DrawDebugSolidBox(GetWorld(), Bounds, DebugColor, FTransform::Identity, true, -1, 1);
-#endif
 	}
 }
 
@@ -187,7 +176,7 @@ void UCustomGrassWorldSubsystem::UpdateRenderState() const
 {
 	if (RenderSystem)
 	{
-		RenderSystem->RebuildRenderState(*GrassDataAsset);
+		RenderSystem->RebuildRenderStateFromGameThread(*GrassDataAsset);
 	}
 
 	for (const TObjectPtr<UCustomGrassPrimitiveComponent>& GrassTile : GrassTiles)
@@ -228,6 +217,11 @@ void UCustomGrassWorldSubsystem::Tick(float DeltaTime)
 	{
 		UpdateComponents();
 	}
+
+	const auto DebugStateSnapshot = RenderSystem->TileDebugChannel.GetDebugStateSnapshot_GameThread();
+	DebugVisualizer.UpdateRTDebugState(DebugStateSnapshot);
+	
+	DebugVisualizer.Tick(DeltaTime);
 }
 
 UCustomGrassWorldSubsystem::EDirtyFlags operator|(

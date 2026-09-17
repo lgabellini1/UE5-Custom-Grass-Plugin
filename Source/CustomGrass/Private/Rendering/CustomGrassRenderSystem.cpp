@@ -62,8 +62,6 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& 
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::BeginFrame);
 	GEngine->GetPostRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::EndFrame);
-
-	SelectedWork.Reserve(CustomGrass::MaxRenderedTiles);
 	
 	ENQUEUE_RENDER_COMMAND(InitializeRTResources)
 	(
@@ -76,6 +74,8 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& 
 				IndirectDrawArgsBuffer[i] = AllocatePooledBuffer(IndirectDrawArgsDesc,
 					*FString::Printf(TEXT("IndirectDrawArgs_[%d]"), i));
 			}
+			
+			SelectedWork.Reserve(CustomGrass::MaxRenderedTiles);
 
 			// Required because the lambda may run after the first call of BeginFrame()
 			bResourcesInitialized = true;
@@ -120,6 +120,7 @@ float FCustomGrassRenderSystem::CalcTilePriorityScore(const FSceneView* View,
 bool FCustomGrassRenderSystem::IsRunning() const
 {
 	check(IsInAnyRenderingThread());
+	
 	return bResourcesInitialized;
 }
 
@@ -162,7 +163,11 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 			*(FString::Printf(TEXT("Heightmap_[%d]"), i)));
 		
 		TileHeightmaps[i] = GraphBuilder.CreateSRV(HeightmapRDG);
+		
+		TileDebugChannel.SetDebugStateForWork(i, Work);
 	}
+	
+	TileDebugChannel.PublishDebugStateSnapshot_RenderThread();
 
 	if (!SelectedWork.IsEmpty())
 	{
@@ -220,13 +225,17 @@ TArray<CustomGrass::FProxyRenderWorkDesc> FCustomGrassRenderSystem::CreateWorkSe
 	return MoveTemp(NextFrameQueuedWork);
 }
 
-void FCustomGrassRenderSystem::RebuildRenderState(const UCustomGrassDataAsset& DataAsset)
+void FCustomGrassRenderSystem::RebuildRenderStateFromGameThread(const UCustomGrassDataAsset& DataAsset)
 {
+	check(IsInGameThread());
+	
 	BuildDataAssetProxy(DataAsset);
 }
 
 bool FCustomGrassRenderSystem::IsViewSameBetweenFrames() const
 {
+	check(IsInAnyRenderingThread());
+	
 	if (SelectedWork.IsEmpty() || NextFrameQueuedWork.IsEmpty())
 	{
 		return false;
@@ -258,6 +267,8 @@ FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThrea
 
 CustomGrass::FVertexShaderParams FCustomGrassRenderSystem::GetVertexShaderDataAssetParams() const
 {
+	check(IsInAnyRenderingThread());
+	
 	return CustomGrass::FVertexShaderParams(
 		DataAssetProxy.ViewSpaceCorrection,
 		DataAssetProxy.NormalRoundnessStrength,
@@ -269,6 +280,8 @@ CustomGrass::EGrassLOD FCustomGrassRenderSystem::AssignTileLOD(
 	const FSceneView* View,
 	const CustomGrass::FProxyLandscapeData& LandscapeData) const
 {
+	check(IsInAnyRenderingThread());
+	
 	CustomGrass::EGrassLOD AssignedLOD = CustomGrass::EGrassLOD::LOD2;
 	
 	if (DataAssetProxy.bFixedLOD)
@@ -345,6 +358,8 @@ CustomGrass::FProxyVertexShaderData* FCustomGrassRenderSystem::AddProxyRendering
 
 CustomGrass::FRenderingResourceHandles FCustomGrassRenderSystem::CreateNewResourceHandles()
 {
+	check(IsInAnyRenderingThread());
+	
 	return CustomGrass::FRenderingResourceHandles(TryGetSRV(InstanceDataBuffer),
 		TryGetRHI(IndirectDrawArgsBuffer[0])
 	);
@@ -352,6 +367,8 @@ CustomGrass::FRenderingResourceHandles FCustomGrassRenderSystem::CreateNewResour
 
 void FCustomGrassRenderSystem::CreateTileAtlasMapping(FRDGBuilder& GraphBuilder)
 {
+	check(IsInAnyRenderingThread());
+	
 	struct FTileAtlasMapping
 	{
 		FIntPoint LandscapeTileCoord;
@@ -405,6 +422,8 @@ void FCustomGrassRenderSystem::SubmitWork(FRDGBuilder& GraphBuilder, const Custo
 
 CustomGrass::FGrassParams FCustomGrassRenderSystem::BuildGrassParams() const
 {
+	check(IsInAnyRenderingThread());
+	
 	CustomGrass::FGrassParams GrassParams;
 	
 	GrassParams.Height				= DataAssetProxy.Height.Value;
@@ -435,6 +454,8 @@ CustomGrass::FShadowParams FCustomGrassRenderSystem::BuildShadowParams(
 	int32 TileIndex,
 	const CustomGrass::FVolatileBuffers& Buffers) const
 {
+	check(IsInAnyRenderingThread());
+	
 	CustomGrass::FShadowParams ShadowParams;
 	
 	ShadowParams.bShadowsOn				  = static_cast<int32>(DataAssetProxy.bShadowsOn);
@@ -455,6 +476,8 @@ CustomGrass::FShadowParams FCustomGrassRenderSystem::BuildShadowParams(
 CustomGrass::FLandscapeParams FCustomGrassRenderSystem::BuildLandscapeParams(int32 TileIndex,
 	const CustomGrass::FProxyLandscapeData& LandscapeTile) const
 {
+	check(IsInAnyRenderingThread());
+	
 	CustomGrass::FLandscapeParams LandscapeParams;
 	
 	LandscapeParams.TileSizeInQuads		  = LandscapeTile.ComponentSizeQuads;
@@ -614,6 +637,8 @@ CustomGrass::FVolatileBuffers FCustomGrassRenderSystem::CreatePerFrameResources(
 
 void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 {
+	check(IsInGameThread());
+
 	ENQUEUE_RENDER_COMMAND(RebuildDataAssetProxy)
 	(
 		[this, NewDataAssetProxy = FDataAssetProxy(DataAsset)]
@@ -626,6 +651,8 @@ void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& 
 
 void FCustomGrassRenderSystem::UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D& ShadowMap) const
 {
+	check(IsInGameThread());
+	
 	ENQUEUE_RENDER_COMMAND(CreateShadowMapAtlasPooledResource)
 	(
 		[this, ShadowMapResource = ShadowMap.GameThread_GetRenderTargetResource()]
@@ -635,6 +662,34 @@ void FCustomGrassRenderSystem::UpdateShadowMapResourceFromGameThread(UTextureRen
 				TEXT("ShadowMapTextureAtlas"));
 		}
 	);
+}
+
+void CustomGrass::FTileDebugChannel::SetDebugStateForWork(int32 WorkIndex, const FProxyRenderWorkDesc& Work)
+{
+	check(IsInAnyRenderingThread());
+	
+	DebugState[WorkIndex] = CustomGrass::FTileDebugInfoRT(Work.Proxy->TileIndex, Work.VSData->LOD);
+}
+
+void CustomGrass::FTileDebugChannel::PublishDebugStateSnapshot_RenderThread()
+{
+	check(IsInAnyRenderingThread());
+	
+	AsyncTask(ENamedThreads::GameThread,
+		[WeakThis = AsWeak(), DebugStateSnapshot = DebugState]()
+	{
+		if (WeakThis.IsValid())
+		{
+			WeakThis.Pin()->GTDebugStateSnapshot = DebugStateSnapshot;
+		}
+	});
+}
+
+CustomGrass::FRTDebugState CustomGrass::FTileDebugChannel::GetDebugStateSnapshot_GameThread() const
+{
+	check(IsInGameThread());
+	
+	return GTDebugStateSnapshot;
 }
 
 FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
