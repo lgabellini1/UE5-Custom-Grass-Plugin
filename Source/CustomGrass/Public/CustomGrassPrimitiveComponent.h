@@ -34,7 +34,7 @@ public:
 
 	ULandscapeComponent& GetAssociatedLandscapeTile() const { return *LandscapeTile; }
 
-	FCustomGrassMaterial GetMaterial() const { return Material; }
+	FCustomGrassMaterial GetCustomGrassMaterial() const { return Material; }
 
 protected:
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;

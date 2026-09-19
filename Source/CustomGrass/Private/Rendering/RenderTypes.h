@@ -21,18 +21,18 @@ namespace CustomGrass
 	const auto LOD1Settings = FLODSettings(7, FIntPoint(1024, 1024), 200.f);
 	const auto LOD2Settings = FLODSettings(7, FIntPoint(512, 512), FLT_MAX);
 
-	const auto LODSettingsMap = TMap<EGrassLOD, FLODSettings>({
-		{EGrassLOD::LOD0, LOD0Settings},
-		{EGrassLOD::LOD1, LOD1Settings},
-		{EGrassLOD::LOD2, LOD2Settings}}
+	const auto LODSettingsMap = TMap<ECustomGrassLOD, FLODSettings>({
+		{ECustomGrassLOD::LOD0, LOD0Settings},
+		{ECustomGrassLOD::LOD1, LOD1Settings},
+		{ECustomGrassLOD::LOD2, LOD2Settings}}
 	);
 
-	inline int32 GetGrassBladeVertexCount(EGrassLOD LOD) { return LODSettingsMap[LOD].VertexCount; }
-	inline int32 GetGrassBladeTriangleCount(EGrassLOD LOD) { return GetGrassBladeVertexCount(LOD) - 2; }
-	inline int32 GetGrassBladeIndicesCount(EGrassLOD LOD) { return GetGrassBladeTriangleCount(LOD) + 2; }
+	inline int32 GetGrassBladeVertexCount(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].VertexCount; }
+	inline int32 GetGrassBladeTriangleCount(ECustomGrassLOD LOD) { return GetGrassBladeVertexCount(LOD) - 2; }
+	inline int32 GetGrassBladeIndicesCount(ECustomGrassLOD LOD) { return GetGrassBladeTriangleCount(LOD) + 2; }
 
-	inline FIntPoint GetInstanceCount(EGrassLOD LOD) { return LODSettingsMap[LOD].InstanceCount; }
-	inline float GetDistanceThreshold(EGrassLOD LOD) { return LODSettingsMap[LOD].DistanceThreshold; }
+	inline FIntPoint GetInstanceCount(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].InstanceCount; }
+	inline float GetDistanceThreshold(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].DistanceThreshold; }
 
 	inline const FIntPoint ShadowMapTextureSlotResolution = FIntPoint(512, 512);
 
@@ -49,20 +49,19 @@ namespace CustomGrass
 	{
 		FRenderingResourceHandles RenderingResources;
 		int32 TileOffset = INDEX_NONE;
-		EGrassLOD LOD;
+		ECustomGrassLOD LOD;
+		double GameTime;
 
-		FProxyVertexShaderData(FRenderingResourceHandles RenderingResources, EGrassLOD LOD)
-			: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD)
+		FProxyVertexShaderData(FRenderingResourceHandles RenderingResources, ECustomGrassLOD LOD, const FGameTime& Time)
+			: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD), GameTime(Time.GetWorldTimeSeconds())
 		{}
 	};
 
 	struct FWindParams
 	{
-		FTextureRHIRef NoiseTexture;
-		FSamplerStateRHIRef NoiseSampler;
+		FTextureResource* NoiseTexture;
 		FVector2f Direction;
 		float Strength;
-		float Time;
 	};
 
 	struct FVertexShaderParams
@@ -70,7 +69,7 @@ namespace CustomGrass
 		float ViewSpaceCorrection;
 		float NormalRoundnessStrength;
 		float ShortHeightThreshold;
-		/* FWindParams WindParams; */
+		FWindParams WindParams;
 	};
 
 	struct FProxyLandscapeData

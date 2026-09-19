@@ -2,7 +2,6 @@
 #include "ConsoleVars.h"
 #include "CustomGrassDataAsset.h"
 #include "CustomGrassPrimitiveComponent.h"
-#include "Rendering/CustomGrassRenderSystem.h"
 #include "CustomGrassSettings.h"
 #include "Landscape.h"
 #include "LandscapeStreamingProxy.h"
@@ -11,6 +10,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Delegates/Delegate.h"
 #include "Engine/TextureRenderTarget2D.h"
+
+ENUM_CLASS_FLAGS(UCustomGrassWorldSubsystem::EDirtyFlags);
 
 void UCustomGrassWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -24,9 +25,12 @@ void UCustomGrassWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	CustomGrass::DataAssetLoaded.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetLoaded);
 	CustomGrass::DataAssetValuesChanged.AddUObject(this, &UCustomGrassWorldSubsystem::OnDataAssetValuesChanged);
 
+	CreateShadowMapTextureAtlas();
+
 	if (GrassDataAsset)
 	{
-		RenderSystem = MakeUnique<FCustomGrassRenderSystem>(*GrassDataAsset);
+		RenderSystem = MakeUnique<FCustomGrassRenderSystem>(*GrassDataAsset,
+			CustomGrass::FTextureRenderTargetsGT(ShadowMapTextureAtlas));
 	}
 	else
 	{
@@ -45,11 +49,6 @@ void UCustomGrassWorldSubsystem::CreateShadowMapTextureAtlas()
 	ShadowMapTextureAtlas->Filter			  = TF_Bilinear;
 	
 	ShadowMapTextureAtlas->UpdateResource();
-	
-	if (RenderSystem)
-	{
-		RenderSystem->UpdateShadowMapResourceFromGameThread(*ShadowMapTextureAtlas);
-	}
 }
 
 void UCustomGrassWorldSubsystem::Deinitialize()
@@ -83,13 +82,16 @@ void UCustomGrassWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			RegisteredLandscapeTiles.Append(Landscape->LandscapeComponents);
 		}
 	}
+
+	DebugVisualizer.Initialize(InWorld);
+	DebugVisualizer.RegisterLandscapeTiles(RegisteredLandscapeTiles);
 	
 	MarkDirty(EDirtyFlags::RunningState);
 }
 
 bool UCustomGrassWorldSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	return GetWorldRef().IsGameWorld();
+	return Cast<UWorld>(Outer)->IsGameWorld();
 }
 
 void UCustomGrassWorldSubsystem::SpawnComponents()
@@ -156,7 +158,7 @@ void UCustomGrassWorldSubsystem::OnDataAssetValuesChanged()
 void UCustomGrassWorldSubsystem::UpdateRunningState()
 {
 	const bool bIsDataAssetLoaded  = GrassDataAsset != nullptr;
-	const bool bIsCVarGrassEnabled = CustomGrass::CVarGrassEnabled.GetValueOnGameThread();
+	const bool bIsCVarGrassEnabled = (CustomGrass::CVarGrassEnabled.GetValueOnGameThread() == 1);
 	
 	const bool bExpectedRunningState = bIsDataAssetLoaded
 		&& bIsCVarGrassEnabled;
@@ -165,8 +167,15 @@ void UCustomGrassWorldSubsystem::UpdateRunningState()
 	{
 		bRunningState = bExpectedRunningState;
 
-		RenderSystem = bRunningState ?
-			MakeUnique<FCustomGrassRenderSystem>(*GrassDataAsset) : nullptr;
+		if (bRunningState)
+		{
+			RenderSystem = MakeUnique<FCustomGrassRenderSystem>(*GrassDataAsset,
+				CustomGrass::FTextureRenderTargetsGT(ShadowMapTextureAtlas));
+		}
+		else
+		{
+			RenderSystem = nullptr;
+		}
 
 		MarkDirty(EDirtyFlags::Components);
 	}
@@ -222,29 +231,4 @@ void UCustomGrassWorldSubsystem::Tick(float DeltaTime)
 	DebugVisualizer.UpdateRTDebugState(DebugStateSnapshot);
 	
 	DebugVisualizer.Tick(DeltaTime);
-}
-
-UCustomGrassWorldSubsystem::EDirtyFlags operator|(
-	UCustomGrassWorldSubsystem::EDirtyFlags F1,
-	UCustomGrassWorldSubsystem::EDirtyFlags F2)
-{
-	return static_cast<UCustomGrassWorldSubsystem::EDirtyFlags>(
-		static_cast<uint8>(F1) | static_cast<uint8>(F2)
-	);
-}
-
-UCustomGrassWorldSubsystem::EDirtyFlags& operator|=(
-	UCustomGrassWorldSubsystem::EDirtyFlags& F1,
-	UCustomGrassWorldSubsystem::EDirtyFlags F2)
-{
-	return F1 = F1 | F2;
-}
-
-UCustomGrassWorldSubsystem::EDirtyFlags operator&(
-	UCustomGrassWorldSubsystem::EDirtyFlags F1,
-	UCustomGrassWorldSubsystem::EDirtyFlags F2)
-{
-	return static_cast<UCustomGrassWorldSubsystem::EDirtyFlags>(
-		static_cast<uint8>(F1) & static_cast<uint8>(F2)
-	);
 }

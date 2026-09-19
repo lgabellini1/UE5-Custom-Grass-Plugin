@@ -35,7 +35,7 @@ struct FDataAssetProxy
 		
 	TRandomVariationValue<float> ClumpStrength;
 	int ClumpGridSize;
-	CustomGrass::EClumpFacingType ClumpFacingType;
+	EClumpFacingType ClumpFacingType;
 	float ClumpFacingStrength;
 		
 	float ShortHeightThreshold;
@@ -54,7 +54,7 @@ struct FDataAssetProxy
 	CustomGrass::FWindParams WindParams;
 
 	bool bFixedLOD;
-	CustomGrass::EGrassLOD GlobalLOD;
+	ECustomGrassLOD GlobalLOD;
 };
 
 namespace CustomGrass
@@ -73,7 +73,7 @@ namespace CustomGrass
 		}
 	};
 
-	class FTileDebugChannel : TSharedFromThis<FTileDebugChannel, ESPMode::ThreadSafe>
+	class FTileDebugChannel
 	{
 	public:
 		void SetDebugStateForWork(int32 WorkIndex, const FProxyRenderWorkDesc& Work);
@@ -93,7 +93,8 @@ class FCustomGrassRenderSystem
 	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
 public:
-	explicit FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset);
+	FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset,
+		const CustomGrass::FTextureRenderTargetsGT& RenderTargets);
 
 	~FCustomGrassRenderSystem();
 	
@@ -104,24 +105,29 @@ public:
 	CustomGrass::FVertexShaderParams GetVertexShaderDataAssetParams() const;
 
 	void RebuildRenderStateFromGameThread(const UCustomGrassDataAsset& DataAsset);
-
-	void UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D& ShadowMap) const;
-
+	
 	CustomGrass::FTileDebugChannel TileDebugChannel;
 
 protected:
 	void BeginFrame(FRDGBuilder& GraphBuilder);
 	void EndFrame(FRDGBuilder& GraphBuilder);
 	
+	enum class ERenderSystemState : uint8
+	{
+		None 				 = 0,
+		BuffersInitialized	 = 1 << 0,
+		ShadowMapInitialized = 1 << 1,
+		SelectionReady		 = 1 << 2
+	};
+	FRIEND_ENUM_CLASS_FLAGS(ERenderSystemState);
+	
+	ERenderSystemState SystemState = ERenderSystemState::None;
+	
 	bool IsRunning() const;
-	
-	bool bRunningState,
-	bResourcesInitialized;
-	
-	FCriticalSection AddRenderingWorkCS;
+	bool IsSelectionReady() const;
+	bool IsShadowMapInitialized() const;
 	
 	TArray<CustomGrass::FProxyRenderWorkDesc> NextFrameQueuedWork, SelectedWork;
-	
 	TArray<CustomGrass::FProxyRenderWorkDesc> CreateWorkSelectionFromQueue();
 
 	bool IsViewSameBetweenFrames() const;
@@ -133,7 +139,7 @@ protected:
 	float CalcTilePriorityScore(const FSceneView* View,
 		const CustomGrass::FProxyLandscapeData& LandscapeData) const;
 
-	CustomGrass::EGrassLOD AssignTileLOD(const FSceneView* View,
+	ECustomGrassLOD AssignTileLOD(const FSceneView* View,
 		const CustomGrass::FProxyLandscapeData& LandscapeData) const;
 	
 	/**
@@ -151,6 +157,8 @@ protected:
 	TStaticArray<FRDGPooledBufferRef, CustomGrass::MaxRenderedTiles> IndirectDrawArgsBuffer;
 
 	FRDGPooledTextureRef ShadowMapTextureAtlas;
+	void CreateShadowMapResource(UTextureRenderTarget2D& ShadowMap);
+	void DestroyShadowMapResourceIfSet();
 
 	FRDGBufferRef TileAtlasMappingBuffer;
 	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder);
@@ -186,4 +194,6 @@ protected:
 		const CustomGrass::FVolatileBuffers& Buffers,
 		int32 TileIndex
 	) const;
+
+	FCriticalSection AddRenderingWorkCS;
 };

@@ -10,13 +10,13 @@
 class FCustomGrassIndexBuffer : public FIndexBuffer
 {
 public:
-	explicit FCustomGrassIndexBuffer(CustomGrass::EGrassLOD LOD)
-	: LOD(LOD), NumIndices(GetGrassBladeIndicesCount(LOD))
+	explicit FCustomGrassIndexBuffer(ECustomGrassLOD LOD)
+	: LOD(LOD), NumIndices(CustomGrass::GetGrassBladeIndicesCount(LOD))
 	{}
 	
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 
-	const CustomGrass::EGrassLOD LOD;
+	const ECustomGrassLOD LOD;
 
 protected:
 	int32 NumIndices;
@@ -39,7 +39,7 @@ public:
 	static void ValidateCompiledResult(const FVertexFactoryType* Type, EShaderPlatform Platform,
 		const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
 
-	FIndexBuffer* GetIndexBuffer(CustomGrass::EGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)].Get(); }
+	FIndexBuffer* GetIndexBuffer(ECustomGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)].Get(); }
 	
 	static constexpr EVertexFactoryFlags Flags =
 		EVertexFactoryFlags::UsedWithMaterials	

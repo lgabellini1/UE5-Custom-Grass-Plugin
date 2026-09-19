@@ -2,11 +2,10 @@
 #include "ConsoleVars.h"
 #include "Landscape.h"
 
-FCustomGrassDebugVisualizer::FCustomGrassDebugVisualizer(
-	const UWorld* World,
-	const FLandscapeTileArray& TileArray)
-: World(World), RegisteredLandscapeTiles(&TileArray)
-{}
+void FCustomGrassDebugVisualizer::Initialize(const UWorld& InWorld)
+{
+	World = &InWorld;
+}
 
 void FCustomGrassDebugVisualizer::Tick(float DeltaTime) const
 {
@@ -19,6 +18,11 @@ void FCustomGrassDebugVisualizer::Tick(float DeltaTime) const
 void FCustomGrassDebugVisualizer::UpdateRTDebugState(const CustomGrass::FRTDebugState& NewDebugState)
 {
 	RTDebugState = NewDebugState;
+}
+
+void FCustomGrassDebugVisualizer::RegisterLandscapeTiles(const FLandscapeTileArray& TileArray)
+{
+	RegisteredLandscapeTiles = &TileArray;
 }
 
 void FCustomGrassDebugVisualizer::UpdateTileBoundingBoxDrawing() const

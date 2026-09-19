@@ -12,7 +12,7 @@
 namespace CustomGrass 
 {
 	template <class ResourceType, class SRVType, class UAVType>
-	struct TResourceAccess<ResourceType, SRVType, UAVType>
+	struct TResourceAccess
 	{
 		ResourceType Resource = nullptr;
 		SRVType SRV = nullptr;
@@ -35,8 +35,8 @@ namespace CustomGrass
 
 constexpr int32 IndexedIndirectDrawArgsNum = 5;
 
-const uint32 InstanceCountPerTile = CustomGrass::GetInstanceCount(CustomGrass::EGrassLOD::LOD0).X *
-	CustomGrass::GetInstanceCount(CustomGrass::EGrassLOD::LOD0).Y;
+const uint32 InstanceCountPerTile = CustomGrass::GetInstanceCount(ECustomGrassLOD::LOD0).X *
+	CustomGrass::GetInstanceCount(ECustomGrassLOD::LOD0).Y;
 
 const uint32 MaxInstanceCount = CustomGrass::MaxRenderedTiles * InstanceCountPerTile;
 
@@ -56,8 +56,11 @@ const FRDGTextureDesc DensityAccumAtlasDesc = FRDGTextureDesc::Create2D(
 	TexCreate_ShaderResource | TexCreate_UAV
 );
 
-FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset)
-	: DataAssetProxy(DataAsset)
+ENUM_CLASS_FLAGS(FCustomGrassRenderSystem::ERenderSystemState);
+
+FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset,
+	const CustomGrass::FTextureRenderTargetsGT& RenderTargets)
+: DataAssetProxy(DataAsset)
 {
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::BeginFrame);
@@ -78,9 +81,14 @@ FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& 
 			SelectedWork.Reserve(CustomGrass::MaxRenderedTiles);
 
 			// Required because the lambda may run after the first call of BeginFrame()
-			bResourcesInitialized = true;
+			EnumAddFlags(SystemState, ERenderSystemState::BuffersInitialized);
 		}
 	);
+
+	if (RenderTargets.ShadowMapTextureAtlas)
+	{
+		CreateShadowMapResource(*RenderTargets.ShadowMapTextureAtlas);		
+	}
 }
 
 FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
@@ -104,6 +112,38 @@ FCustomGrassRenderSystem::~FCustomGrassRenderSystem()
 			}
 		}
 	);
+
+	DestroyShadowMapResourceIfSet();
+}
+
+void FCustomGrassRenderSystem::CreateShadowMapResource(UTextureRenderTarget2D& ShadowMap)
+{
+	ENQUEUE_RENDER_COMMAND(CreateShadowMapAtlasPooledResource)
+	(
+		[this, ShadowMapResource = ShadowMap.GameThread_GetRenderTargetResource()]
+		(FRHICommandListImmediate& RHICmdList)
+		{
+			ShadowMapTextureAtlas = CreateRenderTarget(ShadowMapResource->GetRenderTargetTexture(),
+				TEXT("ShadowMapTextureAtlas"));
+			
+			EnumAddFlags(SystemState, ERenderSystemState::ShadowMapInitialized);
+		}
+	);
+}
+
+void FCustomGrassRenderSystem::DestroyShadowMapResourceIfSet()
+{
+	ENQUEUE_RENDER_COMMAND(DestroyShadowMapPooledResource)
+	(
+		[ShadowMap = MoveTemp(ShadowMapTextureAtlas), StateCopy = SystemState]
+		(FRHICommandListImmediate& RHICmdList) mutable
+		{
+			if (EnumHasAllFlags(StateCopy, ERenderSystemState::ShadowMapInitialized))
+			{
+				ShadowMap.SafeRelease();
+			}
+		}
+	);
 }
 
 float FCustomGrassRenderSystem::CalcTilePriorityScore(const FSceneView* View,
@@ -120,8 +160,19 @@ float FCustomGrassRenderSystem::CalcTilePriorityScore(const FSceneView* View,
 bool FCustomGrassRenderSystem::IsRunning() const
 {
 	check(IsInAnyRenderingThread());
-	
-	return bResourcesInitialized;
+	return EnumHasAllFlags(SystemState, ERenderSystemState::BuffersInitialized);
+}
+
+bool FCustomGrassRenderSystem::IsSelectionReady() const
+{
+	check(IsInAnyRenderingThread());
+	return EnumHasAllFlags(SystemState, ERenderSystemState::SelectionReady);
+}
+
+bool FCustomGrassRenderSystem::IsShadowMapInitialized() const
+{
+	check(IsInAnyRenderingThread());
+	return EnumHasAllFlags(SystemState, ERenderSystemState::ShadowMapInitialized);
 }
 
 void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
@@ -152,11 +203,6 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 		IndirectDrawArgs = TryGetRHI(IndirectDrawArgsBuffer[i]);
 		
 		Work.VSData->TileOffset	= i * InstanceCountPerTile;
-		
-		/*
-		ResourceHandles.WindParams = DataAssetProxy.WindParams;
-		ResourceHandles.WindParams.Time = Work.View->Family->Time.GetWorldTimeSeconds();
-		*/
 
 		const FRDGTextureRef HeightmapRDG = RegisterExternalTexture(GraphBuilder,
 			Work.Proxy->GetLandscapeData().HeightmapTexture,
@@ -222,6 +268,8 @@ TArray<CustomGrass::FProxyRenderWorkDesc> FCustomGrassRenderSystem::CreateWorkSe
 		NextFrameQueuedWork.SetNum(CustomGrass::MaxRenderedTiles);
 	}
 
+	EnumAddFlags(SystemState, ERenderSystemState::SelectionReady);
+	
 	return MoveTemp(NextFrameQueuedWork);
 }
 
@@ -245,26 +293,6 @@ bool FCustomGrassRenderSystem::IsViewSameBetweenFrames() const
 		SelectedWork[0].ViewMatrix);
 }
 
-/*
-FRenderingResourceHandles FCustomGrassRenderSystem::GetBufferHandles_RenderThread() const
-{
-	check(IsInAnyRenderingThread());
-	
-	check(InstanceDataBuffer);
-	check(IndirectDrawArgsBuffer[0]);
-	
-	// Temporarily assign null handles to the first indirect args buffer and tile offset. Later the pointers will
-	// be correctly assigned to their correct values. 
-	return FRenderingResourceHandles(
-		TryGetSRV(InstanceDataBuffer),
-		TryGetRHI(IndirectDrawArgsBuffer[0]),
-		INDEX_NONE
-//		FWindParams(GBlackTexture->GetTextureRHI(), TStaticSamplerState<>::GetRHI(),
-//		FVector2f::Zero(), 0.f)
-	);
-}
-*/
-
 CustomGrass::FVertexShaderParams FCustomGrassRenderSystem::GetVertexShaderDataAssetParams() const
 {
 	check(IsInAnyRenderingThread());
@@ -276,13 +304,13 @@ CustomGrass::FVertexShaderParams FCustomGrassRenderSystem::GetVertexShaderDataAs
 	);
 }
 
-CustomGrass::EGrassLOD FCustomGrassRenderSystem::AssignTileLOD(
+ECustomGrassLOD FCustomGrassRenderSystem::AssignTileLOD(
 	const FSceneView* View,
 	const CustomGrass::FProxyLandscapeData& LandscapeData) const
 {
 	check(IsInAnyRenderingThread());
 	
-	CustomGrass::EGrassLOD AssignedLOD = CustomGrass::EGrassLOD::LOD2;
+	ECustomGrassLOD AssignedLOD = ECustomGrassLOD::LOD2;
 	
 	if (DataAssetProxy.bFixedLOD)
 	{
@@ -295,9 +323,9 @@ CustomGrass::EGrassLOD FCustomGrassRenderSystem::AssignTileLOD(
 	
 		const float CameraToTileDist = FVector::Distance(Camera, NearestTileBounds);
 
-		for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
+		for (ECustomGrassLOD LOD : TEnumRange<ECustomGrassLOD>())
 		{
-			if (CameraToTileDist <= GetDistanceThreshold(LOD))
+			if (CameraToTileDist <= CustomGrass::GetDistanceThreshold(LOD))
 			{
 				AssignedLOD = LOD;
 				break;
@@ -321,13 +349,13 @@ CustomGrass::FProxyVertexShaderData* FCustomGrassRenderSystem::AddProxyRendering
 		return nullptr;
 	}
 
-	bool bDrawThisFrame = SelectedWork.ContainsByPredicate(
+	const bool bIsProxySelected = SelectedWork.ContainsByPredicate(
 		[&Proxy](const CustomGrass::FProxyRenderWorkDesc& Work)
 		{
 			return Work.Proxy == &Proxy;
 		});
 	
-	if (!bDrawThisFrame)
+	if (IsSelectionReady() && !bIsProxySelected)
 	{
 		return nullptr;
 	}
@@ -336,12 +364,13 @@ CustomGrass::FProxyVertexShaderData* FCustomGrassRenderSystem::AddProxyRendering
 	 * only one can insert at a time. */
 	FScopeLock Lock(&AddRenderingWorkCS);
 	
-	CustomGrass::EGrassLOD AssignedLOD = AssignTileLOD(View, LandscapeData);
+	ECustomGrassLOD AssignedLOD = AssignTileLOD(View, LandscapeData);
 	
 	auto VSData = MakeUnique<CustomGrass::FProxyVertexShaderData>(
 		CreateNewResourceHandles(),
-		AssignedLOD);
-	CustomGrass::FProxyVertexShaderData* VSDataHandle = VSData.Get();
+		AssignedLOD,
+		View->Family->Time);
+	auto* VSDataHandle = VSData.Get();
 
 	float TilePriorityScore = CalcTilePriorityScore(View, LandscapeData);
 	
@@ -525,8 +554,8 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	Params->OutInstanceDataBuffer = Buffers.InstanceDataBuffer.UAV;
 	Params->OutInstanceCounter	  = Buffers.InstanceCounter.UAV;
 	Params->TileIndex			  = TileIndex;
-	Params->InstanceCountPerTileX = GetInstanceCount(Work.VSData->LOD).X;
-	Params->InstanceCountPerTileY = GetInstanceCount(Work.VSData->LOD).Y;
+	Params->InstanceCountPerTileX = CustomGrass::GetInstanceCount(Work.VSData->LOD).X;
+	Params->InstanceCountPerTileY = CustomGrass::GetInstanceCount(Work.VSData->LOD).Y;
 	Params->BufferRegionSize	  = InstanceCountPerTile;
 #if WITH_EDITOR
 	Params->ViewProjectionMatrix  = bFrozenViewFrustum ? CachedViewFrustum : FMatrix44f(Work.ViewMatrix);
@@ -545,8 +574,8 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 		check(Params->InstanceCountPerTileY >= CustomGrass::ShadowMapTextureSlotResolution.Y);
 	}
 	
-	const FIntVector ThreadCount = FIntVector(GetInstanceCount(Work.VSData->LOD).X,
-		GetInstanceCount(Work.VSData->LOD).Y, 1); // Total thread count, split among groups
+	const FIntVector ThreadCount = FIntVector(CustomGrass::GetInstanceCount(Work.VSData->LOD).X,
+		CustomGrass::GetInstanceCount(Work.VSData->LOD).Y, 1); // Total thread count, split among groups
 	const int32 GroupSize 		 = CustomGrass::GroupThreadCount.X;
 	const FIntVector GroupCount  = FComputeShaderUtils::GetGroupCount(ThreadCount, GroupSize);
 	FComputeShaderUtils::ValidateGroupCount(GroupCount);
@@ -576,7 +605,7 @@ void FCustomGrassRenderSystem::AddComputePass_InitIndirectDrawArgs(
 	Params->OutIndirectDrawArgsBuffer = Buffers.IndirectDrawArgs[TileIndex].UAV;
 	Params->InInstanceCounter		  = Buffers.InstanceCounter.SRV;
 	Params->TileIndex			      = TileIndex;
-	Params->GrassBladeVertexCount	  = GetGrassBladeVertexCount(Work.VSData->LOD);
+	Params->GrassBladeVertexCount	  = CustomGrass::GetGrassBladeVertexCount(Work.VSData->LOD);
 
 	const FIntVector ThreadCount = FIntVector(1, 1, 1);
 	const FIntVector GroupCount  = FComputeShaderUtils::GetGroupCount(ThreadCount, 1);
@@ -623,9 +652,12 @@ CustomGrass::FVolatileBuffers FCustomGrassRenderSystem::CreatePerFrameResources(
 	}
 	
 	// Shadows: texture atlases
-	
-	Buffers.ShadowMapTextureAtlas.Resource = GraphBuilder.RegisterExternalTexture(ShadowMapTextureAtlas);
-	Buffers.ShadowMapTextureAtlas.UAV	   = GraphBuilder.CreateUAV(Buffers.ShadowMapTextureAtlas.Resource);
+
+	if (IsShadowMapInitialized())
+	{
+		Buffers.ShadowMapTextureAtlas.Resource = GraphBuilder.RegisterExternalTexture(ShadowMapTextureAtlas);
+		Buffers.ShadowMapTextureAtlas.UAV	   = GraphBuilder.CreateUAV(Buffers.ShadowMapTextureAtlas.Resource);
+	}
 
 	Buffers.DensityAccumTextureAtlas.Resource = GraphBuilder.CreateTexture(DensityAccumAtlasDesc,
 		TEXT("DensityAccumAtlas"));
@@ -642,24 +674,9 @@ void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& 
 	ENQUEUE_RENDER_COMMAND(RebuildDataAssetProxy)
 	(
 		[this, NewDataAssetProxy = FDataAssetProxy(DataAsset)]
-		(FRHICommandListImmediate& RHICmdList)
+		(FRHICommandListImmediate& RHICmdList) mutable
 		{
 			DataAssetProxy = MoveTemp(NewDataAssetProxy);
-		}
-	);
-}
-
-void FCustomGrassRenderSystem::UpdateShadowMapResourceFromGameThread(UTextureRenderTarget2D& ShadowMap) const
-{
-	check(IsInGameThread());
-	
-	ENQUEUE_RENDER_COMMAND(CreateShadowMapAtlasPooledResource)
-	(
-		[this, ShadowMapResource = ShadowMap.GameThread_GetRenderTargetResource()]
-		(FRHICommandListImmediate& RHICmdList)
-		{
-			ShadowMapTextureAtlas = CreateRenderTarget(ShadowMapResource->GetRenderTargetTexture(),
-				TEXT("ShadowMapTextureAtlas"));
 		}
 	);
 }
@@ -668,7 +685,7 @@ void CustomGrass::FTileDebugChannel::SetDebugStateForWork(int32 WorkIndex, const
 {
 	check(IsInAnyRenderingThread());
 	
-	DebugState[WorkIndex] = CustomGrass::FTileDebugInfoRT(Work.Proxy->TileIndex, Work.VSData->LOD);
+	DebugState[WorkIndex] = FTileDebugInfoRT(Work.Proxy->TileIndex, Work.VSData->LOD);
 }
 
 void CustomGrass::FTileDebugChannel::PublishDebugStateSnapshot_RenderThread()
@@ -676,11 +693,11 @@ void CustomGrass::FTileDebugChannel::PublishDebugStateSnapshot_RenderThread()
 	check(IsInAnyRenderingThread());
 	
 	AsyncTask(ENamedThreads::GameThread,
-		[WeakThis = AsWeak(), DebugStateSnapshot = DebugState]()
+		[this, DebugStateSnapshot = DebugState]()
 	{
-		if (WeakThis.IsValid())
+		if (this)
 		{
-			WeakThis.Pin()->GTDebugStateSnapshot = DebugStateSnapshot;
+			this->GTDebugStateSnapshot = DebugStateSnapshot;
 		}
 	});
 }
@@ -714,14 +731,14 @@ FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 
 	TilePriorityDistancePenalty = DataAsset.TilePriorityDistancePenalty;
 
-	bShadowsOn			= DataAsset.bShadowsEnabled;
-	ShadowProxyZOffset	= DataAsset.ShadowProxyZOffset;
+	bShadowsOn		   = DataAsset.bShadowsEnabled;
+	ShadowProxyZOffset = DataAsset.ShadowProxyZOffset;
 
 	bFixedLOD = DataAsset.bFixedLOD;
 	GlobalLOD = DataAsset.GlobalLOD;
 
-	const FTextureRHIRef NoiseTexture = DataAsset.NoiseTexture
-		? DataAsset.NoiseTexture->GetResource()->GetTextureRHI() : GBlackTexture->GetTextureRHI();
-	WindParams = CustomGrass::FWindParams(NoiseTexture, TStaticSamplerState<SF_Point>::GetRHI(),
-		DataAsset.WindDirection.GetSafeNormal(), DataAsset.WindStrength, 0.f);
+	WindParams = CustomGrass::FWindParams(
+		DataAsset.NoiseTexture ? DataAsset.NoiseTexture->GetResource() : nullptr,
+		DataAsset.WindDirection,
+		DataAsset.WindStrength);
 }

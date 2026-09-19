@@ -65,10 +65,10 @@ public:
 	int ClumpGridSize = 25;
 
 	UPROPERTY(EditAnywhere, Category="Appearance|Clumps")
-	CustomGrass::EClumpFacingType ClumpFacingType;
+	EClumpFacingType ClumpFacingType;
 	
 	UPROPERTY(EditAnywhere, Category="Appearance|Clumps", meta=(ClampMin="0.0", ClampMax="1.0",
-		EditCondition="ClumpFacingType != CustomGrass::EClumpFacingType::NoClumpFacing"))
+		EditCondition="ClumpFacingType != EClumpFacingType::NoClumpFacing"))
 	float ClumpFacingStrength;
 
 	
@@ -106,7 +106,7 @@ public:
 
 	UPROPERTY(EditAnywhere, Category="Rendering", meta=(
 		EditCondition="bFixedLOD == true"))
-	CustomGrass::EGrassLOD GlobalLOD = CustomGrass::EGrassLOD::LOD0;
+	ECustomGrassLOD GlobalLOD = ECustomGrassLOD::LOD0;
 	
 	
 	UPROPERTY(EditAnywhere, Category="Rendering|Shadows")

@@ -1,39 +1,48 @@
 ﻿#pragma once
 
 #include "Constants.h"
+#include "Types.generated.h"
+
+UENUM(BlueprintType)
+enum class ECustomGrassLOD : uint8
+{
+	LOD0,
+	LOD1,
+	LOD2,
+	NumLODs UMETA(Hidden)
+};
+
+ENUM_RANGE_BY_COUNT(ECustomGrassLOD, ECustomGrassLOD::NumLODs);
 
 namespace CustomGrass
 {
-	UENUM(BlueprintType)
-	enum class EGrassLOD : uint8
-	{
-		LOD0,
-		LOD1,
-		LOD2,
-		NumLODs UMETA(Hidden)
-	};
-	
-	constexpr int32 NumLODs = static_cast<int32>(EGrassLOD::NumLODs);
-	
-	UENUM(BlueprintType)
-	enum class EClumpFacingType : uint8
-	{
-		NoClumpFacing,
-		SameDirection,
-		FaceClumpCenter,
-		OppositeClumpCenter
-	};
-	
+	constexpr int32 NumLODs = static_cast<int32>(ECustomGrassLOD::NumLODs);
+}
+
+UENUM(BlueprintType)
+enum class EClumpFacingType : uint8
+{
+	NoClumpFacing,
+	SameDirection,
+	FaceClumpCenter,
+	OppositeClumpCenter
+};
+
+namespace CustomGrass
+{
 	struct FTileDebugInfoRT
 	{
-		int32 TileIndex;
-		EGrassLOD LOD;
+		int32 TileIndex = INDEX_NONE;
+		ECustomGrassLOD LOD;
 	};
 	
 	using FRTDebugState = TStaticArray<FTileDebugInfoRT, MaxRenderedTiles>;
-}
 
-ENUM_RANGE_BY_COUNT(CustomGrass::EGrassLOD, CustomGrass::EGrassLOD::NumLODs);
+	struct FTextureRenderTargetsGT
+	{
+		UTextureRenderTarget2D* ShadowMapTextureAtlas;
+	};
+}
 
 USTRUCT()
 struct FCustomGrassMaterial
@@ -53,7 +62,7 @@ struct FCustomGrassMaterial
 };
 
 template <class T>
-struct TRandomVariationValue<T>
+struct TRandomVariationValue
 {
 	static_assert(TIsArithmetic<T>::Value,
 		"T must be of arithmetic type");

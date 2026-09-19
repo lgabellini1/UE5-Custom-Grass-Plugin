@@ -6,20 +6,21 @@ class ULandscapeComponent;
 
 class FCustomGrassDebugVisualizer
 {
-	using FLandscapeTileArray = TArray<TObjectPtr<const ULandscapeComponent>>;
+	using FLandscapeTileArray = TArray<TObjectPtr<ULandscapeComponent>>;
 	
 public:
-	FCustomGrassDebugVisualizer(const UWorld* World, 
-		const FLandscapeTileArray& TileArray);
-
+	void Initialize(const UWorld& InWorld);
+	
 	void Tick(float DeltaTime) const;
 	
 	void UpdateRTDebugState(const CustomGrass::FRTDebugState& NewDebugState);
 
+	void RegisterLandscapeTiles(const FLandscapeTileArray& TileArray);
+
 protected:
 	TWeakObjectPtr<const UWorld> World;
 
-	const FLandscapeTileArray* RegisteredLandscapeTiles;
+	const FLandscapeTileArray* RegisteredLandscapeTiles = nullptr;
 
 	CustomGrass::FRTDebugState RTDebugState;
 

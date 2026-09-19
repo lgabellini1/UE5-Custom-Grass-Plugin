@@ -34,7 +34,7 @@ void FCustomGrassIndexBuffer::InitRHI(FRHICommandListBase& RHICmdList)
 FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
 	: FVertexFactory(InFeatureLevel)
 {
-	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
+	for (ECustomGrassLOD LOD : TEnumRange<ECustomGrassLOD>())
 	{
 		IndexBuffers[static_cast<int32>(LOD)] = MakeUnique<FCustomGrassIndexBuffer>(LOD);
 	}
@@ -42,7 +42,7 @@ FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFe
 
 void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 {
-	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
+	for (ECustomGrassLOD LOD : TEnumRange<ECustomGrassLOD>())
 	{
 		IndexBuffers[static_cast<int32>(LOD)]->InitResource(RHICmdList);
 	}
@@ -62,7 +62,7 @@ void FCustomGrassVertexFactory::InitRHI(FRHICommandListBase& RHICmdList)
 
 void FCustomGrassVertexFactory::ReleaseRHI()
 {
-	for (CustomGrass::EGrassLOD LOD : TEnumRange<CustomGrass::EGrassLOD>())
+	for (ECustomGrassLOD LOD : TEnumRange<ECustomGrassLOD>())
 	{
 		IndexBuffers[static_cast<int32>(LOD)]->ReleaseResource();
 	}
@@ -127,13 +127,12 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 {
 	auto* BatchUserData = static_cast<const FCustomGrassBatchUserData*>(BatchElement.UserData);
 	
-	const CustomGrass::FProxyVertexShaderData* VSData = BatchUserData->VSData;
-	check(VSData);
-
 	const CustomGrass::FVertexShaderParams DataAssetParams = BatchUserData->DataAssetParams;
-
-	if (VSData->TileOffset == INDEX_NONE)
-		return;
+	
+	const CustomGrass::FProxyVertexShaderData* VSData = BatchUserData->VSData;
+	checkf(VSData, TEXT("CustomGrass: vertex shader resources are NULL!"));
+	checkf(VSData->TileOffset != INDEX_NONE,
+		TEXT("CustomGrass: vertex shader resources were not re-assigned by the render system!"));
 	
 	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = VSData->RenderingResources.IndirectDrawArgs;
 	
@@ -150,12 +149,13 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(ViewSpaceCorrection, DataAssetParams.ViewSpaceCorrection);
 	ShaderBindings.Add(NormalRoundnessStrength, DataAssetParams.NormalRoundnessStrength);
 	ShaderBindings.Add(ShortHeightThreshold, DataAssetParams.ShortHeightThreshold);
+
+	const FTextureRHIRef NoiseTextureRHI = DataAssetParams.WindParams.NoiseTexture ?
+		DataAssetParams.WindParams.NoiseTexture->GetTextureRHI() : GBlackTexture->GetTextureRHI();
 	
-	/*
-	ShaderBindings.Add(NoiseTexture, ResourceHandles->WindParams.NoiseTexture);
-	ShaderBindings.Add(NoiseSampler, ResourceHandles->WindParams.NoiseSampler);
-	ShaderBindings.Add(WindDirection, ResourceHandles->WindParams.Direction);
-	ShaderBindings.Add(WindStrength, ResourceHandles->WindParams.Strength);
-	ShaderBindings.Add(Time, ResourceHandles->WindParams.Time);
-	*/
+	ShaderBindings.Add(NoiseTexture, NoiseTextureRHI);
+	ShaderBindings.Add(NoiseSampler, TStaticSamplerState<SF_Point>::GetRHI());
+	ShaderBindings.Add(WindDirection, DataAssetParams.WindParams.Direction.GetSafeNormal());
+	ShaderBindings.Add(WindStrength, DataAssetParams.WindParams.Strength);
+	ShaderBindings.Add(Time, VSData->GameTime);
 }

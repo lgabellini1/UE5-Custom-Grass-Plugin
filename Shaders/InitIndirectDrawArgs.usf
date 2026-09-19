@@ -1,4 +1,6 @@
-﻿Buffer<uint> InInstanceCounter;
+﻿#include "/Engine/Public/Platform.ush"
+
+Buffer<uint> InInstanceCounter;
 RWBuffer<uint> OutIndirectDrawArgsBuffer;
 
 int GrassBladeVertexCount;

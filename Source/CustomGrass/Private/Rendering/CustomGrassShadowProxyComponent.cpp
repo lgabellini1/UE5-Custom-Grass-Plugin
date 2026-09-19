@@ -30,7 +30,7 @@ UCustomGrassShadowProxyComponent* UCustomGrassShadowProxyComponent::Make(
 	const UCustomGrassPrimitiveComponent& ParentGrassTile)
 {
 	auto* ShadowProxy = NewObject<UCustomGrassShadowProxyComponent>(
-		GetOwner(),
+		ParentGrassTile.GetOwner(),
 		UCustomGrassShadowProxyComponent::StaticClass(),
 		*FString::Printf(TEXT("CustomGrassShadowProxy_[%d]"), TileIndex)
 	);

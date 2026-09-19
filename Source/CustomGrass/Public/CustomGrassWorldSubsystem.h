@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "FCustomGrassDebugVisualizer.h"
+#include "Rendering/CustomGrassRenderSystem.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 
 class ALandscape;
@@ -44,10 +45,7 @@ protected:
 		Components	 = 1 << 1,
 		Rendering    = 1 << 2
 	};
-
-	friend EDirtyFlags  operator|(EDirtyFlags, EDirtyFlags);
-	friend EDirtyFlags& operator|=(EDirtyFlags&, EDirtyFlags);
-	friend EDirtyFlags  operator&(EDirtyFlags, EDirtyFlags);
+	FRIEND_ENUM_CLASS_FLAGS(EDirtyFlags);
 	
 	UPROPERTY()
 	TArray<TObjectPtr<ULandscapeComponent>> RegisteredLandscapeTiles;

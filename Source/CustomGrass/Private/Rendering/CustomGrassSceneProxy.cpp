@@ -12,8 +12,8 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 		FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(TileIndex) + FString(TEXT("]")))),
 	TileIndex(TileIndex), RenderSystem(RenderSystem),
 	LandscapeData(CustomGrass::FProxyLandscapeData(Component.GetAssociatedLandscapeTile())),
-	MaterialConfig(Component.GetMaterial().TwoSided, GetScene().GetShaderPlatform()),
-	NoTwoSideMaterialConfig(Component.GetMaterial().NoTwoSided, GetScene().GetShaderPlatform())
+	MaterialConfig(Component.GetCustomGrassMaterial().TwoSided, GetScene().GetShaderPlatform()),
+	NoTwoSideMaterialConfig(Component.GetCustomGrassMaterial().NoTwoSided, GetScene().GetShaderPlatform())
 {}
 
 void FCustomGrassSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
@@ -63,7 +63,7 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 			
 			if (const CustomGrass::FProxyVertexShaderData* VSData = RenderSystem->AddProxyRenderingWork(*this, View))
 			{
-				CustomGrass::EGrassLOD LOD = VSData->LOD;
+				ECustomGrassLOD LOD = VSData->LOD;
 
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.MaterialRenderProxy =

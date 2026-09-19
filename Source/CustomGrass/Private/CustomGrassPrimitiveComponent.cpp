@@ -75,11 +75,9 @@ FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& Lo
 
 void UCustomGrassPrimitiveComponent::CreateShadowProxy(const UCustomGrassDataAsset& DataAsset)
 {
-	auto* ShadowProxy = UCustomGrassShadowProxyComponent::Make(DataAsset, TileIndex, *this);
+	ShadowProxy = UCustomGrassShadowProxyComponent::Make(DataAsset, TileIndex, *this);
 
 	ShadowProxy->RegisterComponentWithWorld(GetWorld());
 	ShadowProxy->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
 	ShadowProxy->UpdateRenderSettings(DataAsset);
-
-	this->ShadowProxy = ShadowProxy;
 }

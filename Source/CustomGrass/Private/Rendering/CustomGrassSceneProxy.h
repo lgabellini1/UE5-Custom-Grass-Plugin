@@ -5,7 +5,6 @@
 
 struct FCustomGrassMaterial;
 class ULandscapeComponent;
-// struct FWindParams;
 class UCustomGrassPrimitiveComponent;
 class FCustomGrassRenderSystem;
 class FCustomGrassVertexFactory;

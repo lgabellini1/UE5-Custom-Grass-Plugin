@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "Engine/DeveloperSettings.h"
 #include "CustomGrassSettings.generated.h"
 
 class UCustomGrassDataAsset;
