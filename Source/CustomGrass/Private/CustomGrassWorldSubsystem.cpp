@@ -60,10 +60,7 @@ void UCustomGrassWorldSubsystem::Deinitialize()
 	CustomGrass::DataAssetLoaded.RemoveAll(this);
 	CustomGrass::DataAssetValuesChanged.RemoveAll(this);
 
-	// Synchronous shutdown: make sure that all rendering commands referencing the render system
-	// (through lambdas) finish before dismantling it.
-	FlushRenderingCommands();
-	RenderSystem = nullptr;
+	DismantleRenderSystem();
 
 	RegisteredLandscapeTiles.Empty();
 }
@@ -106,7 +103,7 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 		auto* GrassTileComponent = NewObject<UCustomGrassPrimitiveComponent>(
 			LandscapeTile->GetOwner(),
 			UCustomGrassPrimitiveComponent::StaticClass(),
-			*FString::Printf(TEXT("CustomGrassTile_[%d]"), i)
+			*FString::Printf(TEXT("CustomGrassTile[%d]"), i)
 		);
 		
 		const auto Material = FCustomGrassMaterial(GrassDataAsset->GrassMaterial, 
@@ -115,11 +112,8 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 		GrassTileComponent->Initialize(
 			UCustomGrassPrimitiveComponent::FInitConfig(Material, i),
 			*LandscapeTile,
-			*GrassDataAsset
+			*this
 		);
-
-		GrassTileComponent->RegisterComponentWithWorld(&GetWorldRef());
-		GrassTileComponent->AttachToComponent(LandscapeTile, FAttachmentTransformRules::KeepRelativeTransform);
 				
 		GrassTiles.Add(GrassTileComponent);
 	}
@@ -174,7 +168,7 @@ void UCustomGrassWorldSubsystem::UpdateRunningState()
 		}
 		else
 		{
-			RenderSystem = nullptr;
+			bPendingRenderSystemDestroy = true;
 		}
 
 		MarkDirty(EDirtyFlags::Components);
@@ -231,4 +225,19 @@ void UCustomGrassWorldSubsystem::Tick(float DeltaTime)
 	DebugVisualizer.UpdateRTDebugState(DebugStateSnapshot);
 	
 	DebugVisualizer.Tick(DeltaTime);
+
+	if (bPendingRenderSystemDestroy)
+	{
+		DismantleRenderSystem();
+	}
+}
+
+void UCustomGrassWorldSubsystem::DismantleRenderSystem()
+{
+	// Synchronous shutdown: make sure that all rendering commands referencing the render system
+	// (through lambdas) finish before dismantling it.
+	FlushRenderingCommands();
+	
+	RenderSystem = nullptr;
+	bPendingRenderSystemDestroy = false;
 }

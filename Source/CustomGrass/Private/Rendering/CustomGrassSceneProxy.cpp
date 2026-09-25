@@ -14,11 +14,20 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 	LandscapeData(CustomGrass::FProxyLandscapeData(Component.GetAssociatedLandscapeTile())),
 	MaterialConfig(Component.GetCustomGrassMaterial().TwoSided, GetScene().GetShaderPlatform()),
 	NoTwoSideMaterialConfig(Component.GetCustomGrassMaterial().NoTwoSided, GetScene().GetShaderPlatform())
-{}
+{
+	RenderSystem->RegisterProxy(*this);
+}
+
+FCustomGrassSceneProxy::~FCustomGrassSceneProxy()
+{
+	checkf(RenderSystem,
+		TEXT("CustomGrass: RenderSystem uninitialized, or destroyed while proxies still alive!"));
+	RenderSystem->UnregisterProxy(*this);
+}
 
 void FCustomGrassSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
 {
-	VertexFactory = MakeUnique<FCustomGrassVertexFactory>(GetScene().GetFeatureLevel());
+	VertexFactory = MakeUnique<FCustomGrassVertexFactory>(GetScene().GetFeatureLevel(), RenderSystem);
 	VertexFactory->InitResource(RHICmdList);
 }
 
@@ -54,6 +63,9 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 	FMeshElementCollector& Collector) const
 {
 	check(IsInAnyRenderingThread());
+
+	checkf(RenderSystem,
+		TEXT("CustomGrass: RenderSystem uninitialized, or destroyed while proxies still alive!"));
 	
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
 	{
@@ -61,7 +73,7 @@ void FCustomGrassSceneProxy::GetDynamicMeshElements(
 		{
 			const FSceneView* View = Views[ViewIndex];
 			
-			if (const CustomGrass::FProxyVertexShaderData* VSData = RenderSystem->AddProxyRenderingWork(*this, View))
+			if (const CustomGrass::FProxyVertexShaderData* VSData = RenderSystem->GetProxyRenderResources(*this))
 			{
 				ECustomGrassLOD LOD = VSData->LOD;
 

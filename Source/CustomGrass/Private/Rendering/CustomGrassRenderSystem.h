@@ -13,6 +13,8 @@ namespace CustomGrass
 }
 class FCustomGrassSceneProxy;
 class UCustomGrassDataAsset;
+class FCustomGrassRenderSystem;
+class FCustomGrassSceneViewExtension;
 
 /*
  * Order of execution is roughly:
@@ -65,6 +67,7 @@ namespace CustomGrass
 		FMatrix ViewMatrix;
 		const FCustomGrassSceneProxy* Proxy;
 		TUniquePtr<FProxyVertexShaderData> VSData;
+		FRDGTextureRef HeightmapTexture;
 		float TilePriorityScore;
 		
 		bool operator==(const FProxyRenderWorkDesc& Other) const
@@ -93,14 +96,16 @@ class FCustomGrassRenderSystem
 	using FRDGPooledTextureRef = TRefCountPtr<IPooledRenderTarget>;
 
 public:
-	FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset,
+	FCustomGrassRenderSystem(
+		const UCustomGrassDataAsset& DataAsset,
 		const CustomGrass::FTextureRenderTargetsGT& RenderTargets);
-
 	~FCustomGrassRenderSystem();
 	
-	CustomGrass::FProxyVertexShaderData* AddProxyRenderingWork(
-		const FCustomGrassSceneProxy& Proxy,
-		const FSceneView* View);
+	void RegisterProxy(const FCustomGrassSceneProxy& Proxy);
+	void UnregisterProxy(const FCustomGrassSceneProxy& Proxy);
+
+	CustomGrass::FProxyVertexShaderData* GetProxyRenderResources(
+		const FCustomGrassSceneProxy& Proxy) const;
 	
 	CustomGrass::FVertexShaderParams GetVertexShaderDataAssetParams() const;
 
@@ -108,7 +113,13 @@ public:
 	
 	CustomGrass::FTileDebugChannel TileDebugChannel;
 
+	void CompareAndCheckResourcesValidity(
+		const CustomGrass::FProxyVertexShaderData* VSData) const;
+
 protected:
+	TSharedPtr<FCustomGrassSceneViewExtension, ESPMode::ThreadSafe> SceneViewExtension;
+	friend class FCustomGrassSceneViewExtension;
+	
 	void BeginFrame(FRDGBuilder& GraphBuilder);
 	void EndFrame(FRDGBuilder& GraphBuilder);
 	
@@ -117,19 +128,31 @@ protected:
 		None 				 = 0,
 		BuffersInitialized	 = 1 << 0,
 		ShadowMapInitialized = 1 << 1,
-		SelectionReady		 = 1 << 2
 	};
 	FRIEND_ENUM_CLASS_FLAGS(ERenderSystemState);
 	
 	ERenderSystemState SystemState = ERenderSystemState::None;
 	
 	bool IsRunning() const;
-	bool IsSelectionReady() const;
 	bool IsShadowMapInitialized() const;
-	
-	TArray<CustomGrass::FProxyRenderWorkDesc> NextFrameQueuedWork, SelectedWork;
-	TArray<CustomGrass::FProxyRenderWorkDesc> CreateWorkSelectionFromQueue();
 
+	struct FRegisteredProxy
+	{
+		FPrimitiveComponentId ComponentId;
+		const FCustomGrassSceneProxy* Proxy;
+
+		bool operator==(const FRegisteredProxy& Other) const
+		{
+			return ComponentId == Other.ComponentId;
+		}
+	};
+
+	TArray<FRegisteredProxy> RegisteredProxies;
+	void SelectProxyIfRelevant(const FRegisteredProxy& RegisteredProxy, const FSceneView& View);
+	void PrepareSelectedWorkForRendering(FRDGBuilder& GraphBuilder);
+	
+	TArray<CustomGrass::FProxyRenderWorkDesc> SelectedWork, PrevFrameSelectedWork;
+	
 	bool IsViewSameBetweenFrames() const;
 
 	void SubmitWork(FRDGBuilder& GraphBuilder, const CustomGrass::FVolatileBuffers& Buffers);
@@ -166,10 +189,6 @@ protected:
 	FDataAssetProxy DataAssetProxy;
 	void BuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
 	
-	TStaticArray<FRDGTextureSRVRef, CustomGrass::MaxRenderedTiles> TileHeightmaps;
-
-	CustomGrass::FRenderingResourceHandles CreateNewResourceHandles();
-
 	CustomGrass::FGrassParams BuildGrassParams() const;
 	
 	CustomGrass::FShadowParams BuildShadowParams(
@@ -178,6 +197,7 @@ protected:
 		const CustomGrass::FVolatileBuffers& Buffers) const;
 	
 	CustomGrass::FLandscapeParams BuildLandscapeParams(
+		FRDGBuilder& GraphBuilder,
 		int32 TileIndex,
 		const CustomGrass::FProxyLandscapeData& LandscapeTile) const;
 	

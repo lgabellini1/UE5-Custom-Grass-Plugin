@@ -37,6 +37,7 @@ UCustomGrassShadowProxyComponent* UCustomGrassShadowProxyComponent::Make(
 
 	ShadowProxy->PlaneResolution = DataAsset.ShadowProxyResolution;
 	ShadowProxy->SetMaterial(0, CreateMID(DataAsset, ParentGrassTile));
+	ShadowProxy->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	ShadowProxy->ParentGrassTile = &ParentGrassTile;
 

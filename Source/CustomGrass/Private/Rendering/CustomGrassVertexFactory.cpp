@@ -1,5 +1,5 @@
 ﻿#include "CustomGrassVertexFactory.h"
-#include "CustomGrassSceneProxy.h"
+#include "CustomGrassRenderSystem.h"
 #include "LandscapeRender.h"
 #include "MeshDrawShaderBindings.h"
 #include "MeshMaterialShader.h"
@@ -31,8 +31,9 @@ void FCustomGrassIndexBuffer::InitRHI(FRHICommandListBase& RHICmdList)
 	IndexBufferRHI = RHICmdList.CreateBuffer(BufferDesc);
 }
 
-FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
-	: FVertexFactory(InFeatureLevel)
+FCustomGrassVertexFactory::FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel,
+	const FCustomGrassRenderSystem* RenderSystem)
+: FVertexFactory(InFeatureLevel), RenderSystem(RenderSystem)
 {
 	for (ECustomGrassLOD LOD : TEnumRange<ECustomGrassLOD>())
 	{
@@ -95,7 +96,7 @@ bool FCustomGrassVertexFactory::ShouldCompilePermutation(const FVertexFactorySha
 void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& ParameterMap)
 {
 	InstanceDataBuffer.Bind(ParameterMap, TEXT("InInstanceDataBuffer"));
-	TileIndex.Bind(ParameterMap, TEXT("TileOffset"));
+	TileBufferOffset.Bind(ParameterMap, TEXT("TileBufferOffset"));
 	GrassBladeVertexCount.Bind(ParameterMap, TEXT("GrassBladeVertexCount"));
 	LOD.Bind(ParameterMap, TEXT("LOD"));
 	
@@ -130,14 +131,17 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	const CustomGrass::FVertexShaderParams DataAssetParams = BatchUserData->DataAssetParams;
 	
 	const CustomGrass::FProxyVertexShaderData* VSData = BatchUserData->VSData;
+	
 	checkf(VSData, TEXT("CustomGrass: vertex shader resources are NULL!"));
-	checkf(VSData->TileOffset != INDEX_NONE,
-		TEXT("CustomGrass: vertex shader resources were not re-assigned by the render system!"));
 	
-	const_cast<FMeshBatchElement&>(BatchElement).IndirectArgsBuffer = VSData->RenderingResources.IndirectDrawArgs;
-	
+	checkf(VSData->TileBufferOffset != INDEX_NONE,
+		TEXT("CustomGrass: vertex shader resources were not initialized by the render system!"));
+
+	const auto* RenderSystem = static_cast<const FCustomGrassVertexFactory*>(VertexFactory)->GetRenderSystem();
+	RenderSystem->CompareAndCheckResourcesValidity(VSData);
+		
 	ShaderBindings.Add(InstanceDataBuffer, VSData->RenderingResources.InstanceData);
-	ShaderBindings.Add(TileIndex, VSData->TileOffset);
+	ShaderBindings.Add(TileBufferOffset, VSData->TileBufferOffset);
 	ShaderBindings.Add(GrassBladeVertexCount, CustomGrass::GetGrassBladeVertexCount(VSData->LOD));
 	ShaderBindings.Add(LOD, static_cast<int32>(VSData->LOD));
 

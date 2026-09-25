@@ -20,15 +20,18 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 void UCustomGrassPrimitiveComponent::Initialize(
 	const FInitConfig& Config,
 	ULandscapeComponent& AssociatedLandscapeTile,
-	const UCustomGrassDataAsset& DataAsset)
+	const UCustomGrassWorldSubsystem& WorldSubsystem)
 {
 	LandscapeTile = &AssociatedLandscapeTile;
 	
 	Material  = Config.Material;
 	TileIndex = Config.TileIndex;
 
-	SetCastShadow(DataAsset.bShadowsEnabled);
-	CreateShadowProxy(DataAsset);
+	RegisterComponentWithWorld(&WorldSubsystem.GetWorldRef());
+	AttachToComponent(LandscapeTile, FAttachmentTransformRules::KeepRelativeTransform);
+
+	SetCastShadow(WorldSubsystem.GetDataAsset().bShadowsEnabled);
+	CreateShadowProxy(WorldSubsystem.GetDataAsset());
 }
 
 void UCustomGrassPrimitiveComponent::UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset)
@@ -77,7 +80,7 @@ void UCustomGrassPrimitiveComponent::CreateShadowProxy(const UCustomGrassDataAss
 {
 	ShadowProxy = UCustomGrassShadowProxyComponent::Make(DataAsset, TileIndex, *this);
 
-	ShadowProxy->RegisterComponentWithWorld(GetWorld());
 	ShadowProxy->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
+	ShadowProxy->RegisterComponentWithWorld(GetWorld());
 	ShadowProxy->UpdateRenderSettings(DataAsset);
 }

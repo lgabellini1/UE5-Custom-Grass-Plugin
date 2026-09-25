@@ -48,12 +48,17 @@ namespace CustomGrass
 	struct FProxyVertexShaderData
 	{
 		FRenderingResourceHandles RenderingResources;
-		int32 TileOffset = INDEX_NONE;
+		int32 TileBufferOffset = INDEX_NONE,
+			TileIndex = INDEX_NONE;
 		ECustomGrassLOD LOD;
 		double GameTime;
 
 		FProxyVertexShaderData(FRenderingResourceHandles RenderingResources, ECustomGrassLOD LOD, const FGameTime& Time)
 			: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD), GameTime(Time.GetWorldTimeSeconds())
+		{}
+
+		FProxyVertexShaderData(ECustomGrassLOD LOD, const FGameTime& Time)
+			: FProxyVertexShaderData({}, LOD, Time)
 		{}
 	};
 

@@ -4,6 +4,7 @@
 #include "Types.h"
 #include "CustomGrassPrimitiveComponent.generated.h"
 
+class UCustomGrassWorldSubsystem;
 class ULandscapeComponent;
 class UCustomGrassShadowProxyComponent;
 class UCustomGrassDataAsset;
@@ -22,8 +23,10 @@ public:
 		int32 TileIndex;
 	};
 	
-	void Initialize(const FInitConfig& Config, ULandscapeComponent& AssociatedLandscapeTile,
-		const UCustomGrassDataAsset& DataAsset);
+	void Initialize(
+		const FInitConfig& Config,
+		ULandscapeComponent& AssociatedLandscapeTile,
+		const UCustomGrassWorldSubsystem& WorldSubsystem);
 
 	virtual void OnComponentCreated() override;
 

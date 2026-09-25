@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "RenderTypes.h"
 
+class FCustomGrassRenderSystem;
+
 /**
  * Custom empty index buffer. In theory, a proper index buffer
  * is not needed as we do not use vertex buffers.
@@ -27,7 +29,7 @@ class FCustomGrassVertexFactory : public FVertexFactory
 	DECLARE_VERTEX_FACTORY_TYPE(FCustomGrassVertexFactory);
 
 public:
-	explicit FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel);
+	FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel, const FCustomGrassRenderSystem* RenderSystem);
 
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 	virtual void ReleaseRHI() override;
@@ -40,6 +42,8 @@ public:
 		const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
 
 	FIndexBuffer* GetIndexBuffer(ECustomGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)].Get(); }
+
+	const FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem; }
 	
 	static constexpr EVertexFactoryFlags Flags =
 		EVertexFactoryFlags::UsedWithMaterials	
@@ -49,6 +53,8 @@ public:
 
 protected:
 	TStaticArray<TUniquePtr<FCustomGrassIndexBuffer>, CustomGrass::NumLODs> IndexBuffers;
+
+	const FCustomGrassRenderSystem* RenderSystem;
 };
 
 class FCustomGrassVertexFactoryShaderParams : public FVertexFactoryShaderParameters
@@ -71,7 +77,7 @@ public:
 
 protected:
 	LAYOUT_FIELD(FShaderResourceParameter, InstanceDataBuffer);
-	LAYOUT_FIELD(FShaderParameter, TileIndex);
+	LAYOUT_FIELD(FShaderParameter, TileBufferOffset);
 	LAYOUT_FIELD(FShaderParameter, GrassBladeVertexCount);
 	LAYOUT_FIELD(FShaderParameter, LOD);
 

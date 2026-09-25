@@ -4,7 +4,7 @@
 // factory boilerplate code. 
 
 StructuredBuffer<FGrassBladeDataPacked> InInstanceDataBuffer;
-int TileOffset;
+int TileBufferOffset;
 int GrassBladeVertexCount;
 int LOD;
 
@@ -80,7 +80,7 @@ float3 ConstructBendDir(float3 Base, float3 Tip)
 	return normalize(cross(SideDir, BaseToTip));
 }
 
-void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCount, int SplitSegment, bool IsMainBlade,
+void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, uint InstanceId, int SegmentCount, int SplitSegment, bool IsMainBlade,
 	inout float2 OutLocalUV, inout float3 OutWorldPos, inout float3 OutWorldNormal, out float4 OutDebugValue)
 {
 	OutDebugValue = (float4)0;
@@ -150,7 +150,7 @@ void ComputeBladeVertex(FGrassBladeData GrassBlade, uint VertexId, int SegmentCo
 	float3 WorldPos = GrassBlade.Position + mul(LocalPos, LocalToWorld);
 	WorldPos = ComputeViewSpaceShift(WorldPos, IsTip, OffsetSign, LocalToWorld);
 
-	OutWorldPos	   = WorldPos;
+	OutWorldPos	= WorldPos;
 	float3 WorldNormal = normalize(mul(RoundedNormals, LocalToWorld));
 
 	float3 TargetNormal = float3(0, 0, 1);
@@ -163,7 +163,7 @@ void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
 	inout float2 OutLocalUV, inout float3 OutWorldPos, inout float3 OutWorldNormal, inout float4 OutDebugValue)
 {
 	FGrassBladeData GrassBlade = UnpackGrassBladeData(
-		InInstanceDataBuffer[InstanceId + TileOffset],
+		InInstanceDataBuffer[InstanceId + TileBufferOffset],
 		MaxGrassHeight, MaxGrassWidth, MaxGrassTilt, MaxGrassBend
 	);
 	
@@ -179,12 +179,12 @@ void VSMain(in uint VertexId : SV_VertexID, in uint InstanceId : SV_InstanceID,
 		// Reverse order for secondary blade so that v0 == tip
 		uint LocalVertexId = IsMainBlade ? VertexId - SplitVertexId : SplitVertexId - VertexId;
 		
-		ComputeBladeVertex(GrassBlade, LocalVertexId, SegmentCount, SplitSegment, IsMainBlade,
+		ComputeBladeVertex(GrassBlade, LocalVertexId, InstanceId, SegmentCount, SplitSegment, IsMainBlade,
 			OutLocalUV, OutWorldPos, OutWorldNormal, OutDebugValue);
 	}
 	else
 	{
-		ComputeBladeVertex(GrassBlade, VertexId, SegmentCount, 0, true,
+		ComputeBladeVertex(GrassBlade, VertexId, InstanceId, SegmentCount, 0, true,
 			OutLocalUV, OutWorldPos, OutWorldNormal, OutDebugValue);
 	}
 

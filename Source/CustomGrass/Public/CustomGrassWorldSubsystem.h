@@ -37,6 +37,8 @@ public:
 	
 protected:
 	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
+	void DismantleRenderSystem();
+	bool bPendingRenderSystemDestroy;
 	
 	enum class EDirtyFlags : uint8
 	{

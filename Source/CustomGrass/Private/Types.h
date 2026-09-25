@@ -32,7 +32,7 @@ namespace CustomGrass
 {
 	struct FTileDebugInfoRT
 	{
-		int32 TileIndex = INDEX_NONE;
+		FPrimitiveComponentId TileComponentId;
 		ECustomGrassLOD LOD;
 	};
 	

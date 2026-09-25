@@ -7,7 +7,40 @@
 #include "RenderGraphUtils.h"
 #include "ShaderTypes.h"
 #include "Utilities.h"
+#include "SceneViewExtension.h"
 #include "Engine/TextureRenderTarget2D.h"
+
+class FCustomGrassSceneViewExtension final : public FSceneViewExtensionBase
+{
+public:
+	FCustomGrassSceneViewExtension(const FAutoRegister& AutoRegister, FCustomGrassRenderSystem* InRenderSystem)
+		: FSceneViewExtensionBase(AutoRegister), RenderSystem(InRenderSystem)
+	{}
+	
+	virtual void PreRenderView_RenderThread(FRDGBuilder& GraphBuilder, FSceneView& InView) override
+	{
+		checkf(RenderSystem, TEXT("SceneViewExtension outlives render system!"));
+
+		checkf(RenderSystem->SelectedWork.IsEmpty(),
+			TEXT("Selected rendering work should be empty at start of frame!"))
+
+		// If the view has not changed, reuse previous frame's work. Useful to
+		// avoid flickering issues due to race conditions between grass tiles.
+		
+		if (!RenderSystem->IsViewSameBetweenFrames())
+		{
+			for (const auto& Proxy : RenderSystem->RegisteredProxies)
+    		{
+    			RenderSystem->SelectProxyIfRelevant(Proxy, InView);
+    		}	
+		}
+
+		RenderSystem->PrepareSelectedWorkForRendering(GraphBuilder);
+	}
+
+private:
+	FCustomGrassRenderSystem* RenderSystem;
+};
 
 namespace CustomGrass 
 {
@@ -60,7 +93,8 @@ ENUM_CLASS_FLAGS(FCustomGrassRenderSystem::ERenderSystemState);
 
 FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset,
 	const CustomGrass::FTextureRenderTargetsGT& RenderTargets)
-: DataAssetProxy(DataAsset)
+: SceneViewExtension(FSceneViewExtensions::NewExtension<FCustomGrassSceneViewExtension>(this)),
+DataAssetProxy(DataAsset)
 {
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::BeginFrame);
@@ -163,12 +197,6 @@ bool FCustomGrassRenderSystem::IsRunning() const
 	return EnumHasAllFlags(SystemState, ERenderSystemState::BuffersInitialized);
 }
 
-bool FCustomGrassRenderSystem::IsSelectionReady() const
-{
-	check(IsInAnyRenderingThread());
-	return EnumHasAllFlags(SystemState, ERenderSystemState::SelectionReady);
-}
-
 bool FCustomGrassRenderSystem::IsShadowMapInitialized() const
 {
 	check(IsInAnyRenderingThread());
@@ -187,37 +215,10 @@ void FCustomGrassRenderSystem::BeginFrame(FRDGBuilder& GraphBuilder)
 #if WITH_EDITOR
 	UE_LOG(LogTemp, Display, TEXT("--- CustomGrass: BeginFrame ---"));
 #endif
-	
-	for (int32 i = 0, Count = FMath::Min(SelectedWork.Num(), CustomGrass::MaxRenderedTiles);
-		i < Count; i++)
-	{
-		// Handle re-assignment: take the handle from each proxy to be rendered
-		// and make it point to the correct buffer. Somewhat of a hack and not very
-		// clean architecturally, but it works as a solution for this circular dependency
-		// between render system and proxy.
-		
-		const CustomGrass::FProxyRenderWorkDesc& Work = SelectedWork[i];
-		
-		auto& [ InstanceData, IndirectDrawArgs] = Work.VSData->RenderingResources;
-		InstanceData	 = TryGetSRV(InstanceDataBuffer);
-		IndirectDrawArgs = TryGetRHI(IndirectDrawArgsBuffer[i]);
-		
-		Work.VSData->TileOffset	= i * InstanceCountPerTile;
-
-		const FRDGTextureRef HeightmapRDG = RegisterExternalTexture(GraphBuilder,
-			Work.Proxy->GetLandscapeData().HeightmapTexture,
-			*(FString::Printf(TEXT("Heightmap_[%d]"), i)));
-		
-		TileHeightmaps[i] = GraphBuilder.CreateSRV(HeightmapRDG);
-		
-		TileDebugChannel.SetDebugStateForWork(i, Work);
-	}
-	
-	TileDebugChannel.PublishDebugStateSnapshot_RenderThread();
 
 	if (!SelectedWork.IsEmpty())
 	{
-		const CustomGrass::FVolatileBuffers Buffers = CreatePerFrameResources(GraphBuilder);
+		const CustomGrass::FVolatileBuffers& Buffers = CreatePerFrameResources(GraphBuilder);
 		SubmitWork(GraphBuilder, Buffers);
 	}
 }
@@ -233,44 +234,68 @@ void FCustomGrassRenderSystem::EndFrame(FRDGBuilder& GraphBuilder)
 	UE_LOG(LogTemp, Display, TEXT("--- CustomGrass: EndFrame ---"));
 #endif
 
-	// If the view has not changed, reuse previous frame's work. Useful to
-	// avoid flickering issues due to race conditions between grass tiles.
-	
-	if (!IsViewSameBetweenFrames())
-	{
-		SelectedWork = CreateWorkSelectionFromQueue();
-	}
-
-	NextFrameQueuedWork.Reset();
-
-	for (FRDGTextureSRVRef& Heightmap : TileHeightmaps)
-		Heightmap = nullptr;
+	PrevFrameSelectedWork = MoveTemp(SelectedWork);
+	SelectedWork.Reset();
 }
 
-TArray<CustomGrass::FProxyRenderWorkDesc> FCustomGrassRenderSystem::CreateWorkSelectionFromQueue()
+void FCustomGrassRenderSystem::SelectProxyIfRelevant(const FRegisteredProxy& RegisteredProxy, const FSceneView& View)
 {
-	check(IsInAnyRenderingThread());
-
-	if (NextFrameQueuedWork.IsEmpty())
+	if (RegisteredProxy.Proxy->IsShown(&View))
 	{
-		return {};
+		const CustomGrass::FProxyLandscapeData& LandscapeData = RegisteredProxy.Proxy->GetLandscapeData();
+
+		const float TilePriorityScore = CalcTilePriorityScore(&View, LandscapeData);
+		ECustomGrassLOD AssignedLOD	  = AssignTileLOD(&View, LandscapeData);
+
+		auto VSData = MakeUnique<CustomGrass::FProxyVertexShaderData>(AssignedLOD, View.Family->Time);
+			
+		SelectedWork.Push(CustomGrass::FProxyRenderWorkDesc{
+			View.ViewMatrices.GetViewOrigin(),
+			View.ViewMatrices.GetViewProjectionMatrix(),
+			RegisteredProxy.Proxy,
+			MoveTemp(VSData),
+			nullptr,
+			TilePriorityScore
+		});
 	}
-	
-	NextFrameQueuedWork.Sort([](
+}
+
+void FCustomGrassRenderSystem::PrepareSelectedWorkForRendering(FRDGBuilder& GraphBuilder) 
+{
+	SelectedWork.Sort([](
 		const CustomGrass::FProxyRenderWorkDesc& A,
 		const CustomGrass::FProxyRenderWorkDesc& B)
 	{
 		return A.TilePriorityScore > B.TilePriorityScore;
 	});
-	
-	if (NextFrameQueuedWork.Num() > CustomGrass::MaxRenderedTiles)
-	{
-		NextFrameQueuedWork.SetNum(CustomGrass::MaxRenderedTiles);
-	}
 
-	EnumAddFlags(SystemState, ERenderSystemState::SelectionReady);
+	if (SelectedWork.Num() > CustomGrass::MaxRenderedTiles)
+	{
+		SelectedWork.SetNum(CustomGrass::MaxRenderedTiles);
+	}
 	
-	return MoveTemp(NextFrameQueuedWork);
+	for (int32 i = 0; i < SelectedWork.Num(); i++)
+	{
+		CustomGrass::FProxyRenderWorkDesc& Work = SelectedWork[i];
+		
+		auto& [ InstanceData, IndirectDrawArgs] = Work.VSData->RenderingResources;
+		InstanceData	 = TryGetSRV(InstanceDataBuffer);
+		IndirectDrawArgs = TryGetRHI(IndirectDrawArgsBuffer[i]);
+
+		checkf(InstanceData, TEXT("CustomGrass: TryGetSRV() failed! Null InstanceDataBuffer."));
+		checkf(InstanceData, TEXT("CustomGrass: TryGetRHI() failed! Null IndirectDrawArgsBuffer."));
+
+		Work.VSData->TileIndex		  = i;
+		Work.VSData->TileBufferOffset = i * InstanceCountPerTile;
+		
+		Work.HeightmapTexture = RegisterExternalTexture(GraphBuilder,
+			Work.Proxy->GetLandscapeData().HeightmapTexture,
+			*(FString::Printf(TEXT("Heightmap_[%d]"), i)));
+		
+		TileDebugChannel.SetDebugStateForWork(i, Work);
+	}
+	
+	TileDebugChannel.PublishDebugStateSnapshot_RenderThread();	
 }
 
 void FCustomGrassRenderSystem::RebuildRenderStateFromGameThread(const UCustomGrassDataAsset& DataAsset)
@@ -284,12 +309,12 @@ bool FCustomGrassRenderSystem::IsViewSameBetweenFrames() const
 {
 	check(IsInAnyRenderingThread());
 	
-	if (SelectedWork.IsEmpty() || NextFrameQueuedWork.IsEmpty())
+	if (SelectedWork.IsEmpty() || PrevFrameSelectedWork.IsEmpty())
 	{
 		return false;
 	}
 
-	return NextFrameQueuedWork[0].ViewMatrix.Equals(
+	return PrevFrameSelectedWork[0].ViewMatrix.Equals(
 		SelectedWork[0].ViewMatrix);
 }
 
@@ -336,62 +361,63 @@ ECustomGrassLOD FCustomGrassRenderSystem::AssignTileLOD(
 	return AssignedLOD;
 }
 
-CustomGrass::FProxyVertexShaderData* FCustomGrassRenderSystem::AddProxyRenderingWork(
-	const FCustomGrassSceneProxy& Proxy,
-	const FSceneView* View) 
+void FCustomGrassRenderSystem::RegisterProxy(const FCustomGrassSceneProxy& Proxy)
 {
-	check(IsInAnyRenderingThread());
+	check(IsInGameThread());
 
-	const CustomGrass::FProxyLandscapeData& LandscapeData = Proxy.GetLandscapeData();
-
-	if (IsTileOutsideViewFrustum(View, LandscapeData))
-	{
-		return nullptr;
-	}
-
-	const bool bIsProxySelected = SelectedWork.ContainsByPredicate(
-		[&Proxy](const CustomGrass::FProxyRenderWorkDesc& Work)
+	ENQUEUE_RENDER_COMMAND(RegisterCustomGrassProxyToRenderSystem)
+	(
+		[this, ProxyPtr = &Proxy](FRHICommandListImmediate& RHICmdList)
 		{
-			return Work.Proxy == &Proxy;
-		});
-	
-	if (IsSelectionReady() && !bIsProxySelected)
-	{
-		return nullptr;
-	}
+			const auto RegisteredProxy = FRegisteredProxy(ProxyPtr->GetPrimitiveComponentId(), ProxyPtr);
 
-	/* Ensure thread-safe writing of NextFrameQueuedWork from the various (render) worker threads, so that
-	 * only one can insert at a time. */
-	FScopeLock Lock(&AddRenderingWorkCS);
-	
-	ECustomGrassLOD AssignedLOD = AssignTileLOD(View, LandscapeData);
-	
-	auto VSData = MakeUnique<CustomGrass::FProxyVertexShaderData>(
-		CreateNewResourceHandles(),
-		AssignedLOD,
-		View->Family->Time);
-	auto* VSDataHandle = VSData.Get();
-
-	float TilePriorityScore = CalcTilePriorityScore(View, LandscapeData);
-	
-	NextFrameQueuedWork.Push(CustomGrass::FProxyRenderWorkDesc{
-		View->ViewMatrices.GetViewOrigin(),
-		View->ViewMatrices.GetViewProjectionMatrix(),
-		&Proxy,
-		MoveTemp(VSData),
-		TilePriorityScore
-	});
-
-	return VSDataHandle;
+			if (FRegisteredProxy* Found = RegisteredProxies.FindByPredicate(
+				[&RegisteredProxy](const FRegisteredProxy& Entry)
+				{
+					return Entry == RegisteredProxy;
+				}))
+			{
+				Found->Proxy = ProxyPtr;
+			}
+			else
+			{
+				RegisteredProxies.Add(RegisteredProxy);
+			}
+		}
+	);
 }
 
-CustomGrass::FRenderingResourceHandles FCustomGrassRenderSystem::CreateNewResourceHandles()
+void FCustomGrassRenderSystem::UnregisterProxy(const FCustomGrassSceneProxy& Proxy)
+{
+	check(IsInAnyRenderingThread());
+
+	ENQUEUE_RENDER_COMMAND(UnregisterCustomGrassProxyToRenderSystem)
+	(
+		[this, ProxyPtr = &Proxy](FRHICommandListImmediate& RHICmdList)
+		{
+			RegisteredProxies.RemoveAll([ProxyPtr](const FRegisteredProxy& Entry)
+			{
+				return Entry.Proxy == ProxyPtr;
+			});
+		}
+	);
+}
+
+CustomGrass::FProxyVertexShaderData* FCustomGrassRenderSystem::GetProxyRenderResources(
+	const FCustomGrassSceneProxy& Proxy) const
 {
 	check(IsInAnyRenderingThread());
 	
-	return CustomGrass::FRenderingResourceHandles(TryGetSRV(InstanceDataBuffer),
-		TryGetRHI(IndirectDrawArgsBuffer[0])
-	);
+	if (!RegisteredProxies.Contains(FRegisteredProxy(Proxy.GetPrimitiveComponentId(), &Proxy)))
+		return nullptr;
+
+	const auto* ProxyAsSelected = SelectedWork.FindByPredicate(
+		[&Proxy](const CustomGrass::FProxyRenderWorkDesc& Work)
+	{
+		return Work.Proxy == &Proxy;
+	});
+
+	return ProxyAsSelected ? ProxyAsSelected->VSData.Get() : nullptr; 
 }
 
 void FCustomGrassRenderSystem::CreateTileAtlasMapping(FRDGBuilder& GraphBuilder)
@@ -502,10 +528,14 @@ CustomGrass::FShadowParams FCustomGrassRenderSystem::BuildShadowParams(
 	return ShadowParams;
 }
 
-CustomGrass::FLandscapeParams FCustomGrassRenderSystem::BuildLandscapeParams(int32 TileIndex,
+CustomGrass::FLandscapeParams FCustomGrassRenderSystem::BuildLandscapeParams(
+	FRDGBuilder& GraphBuilder,
+	int32 TileIndex,
 	const CustomGrass::FProxyLandscapeData& LandscapeTile) const
 {
 	check(IsInAnyRenderingThread());
+
+	checkf(SelectedWork[TileIndex].HeightmapTexture, TEXT("CustomGrass: Warning! Heightmap not set."))
 	
 	CustomGrass::FLandscapeParams LandscapeParams;
 	
@@ -515,7 +545,7 @@ CustomGrass::FLandscapeParams FCustomGrassRenderSystem::BuildLandscapeParams(int
 	LandscapeParams.QuadOffsetFromOriginX = LandscapeTile.SectionBase.X;
 	LandscapeParams.QuadOffsetFromOriginY = LandscapeTile.SectionBase.Y;
 	LandscapeParams.LandscapeLocalToWorld = FMatrix44f(LandscapeTile.LocalToWorldMatrix);
-	LandscapeParams.HeightmapTexture	  = TileHeightmaps[TileIndex];
+	LandscapeParams.HeightmapTexture	  = GraphBuilder.CreateSRV(SelectedWork[TileIndex].HeightmapTexture);
 	LandscapeParams.HeightmapSampler	  = LandscapeTile.HeightmapSampler;
 	LandscapeParams.HeightmapScaleBias    = FVector4f(LandscapeTile.HeightmapScaleBias);
 
@@ -564,7 +594,7 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 #endif
 	Params->ViewOrigin			  = FVector4f(FLinearColor(Work.ViewOrigin));
 	Params->MaxRenderDistance	  = DataAssetProxy.MaxRenderDistance;
-	Params->LandscapeParams		  = BuildLandscapeParams(TileIndex, Tile);
+	Params->LandscapeParams		  = BuildLandscapeParams(GraphBuilder, TileIndex, Tile);
 	Params->GrassParams			  = BuildGrassParams();
 	Params->ShadowParams		  = BuildShadowParams(GraphBuilder, TileIndex, Buffers);
 
@@ -681,11 +711,32 @@ void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& 
 	);
 }
 
+void FCustomGrassRenderSystem::CompareAndCheckResourcesValidity(
+	const CustomGrass::FProxyVertexShaderData* VSData) const
+{
+	if (VSData->TileIndex < SelectedWork.Num())
+	{
+		checkf(VSData == SelectedWork[VSData->TileIndex].VSData.Get(),
+			TEXT("CustomGrass: proxy tries to render with different VSData from the one handed!"));
+	}
+	
+	checkf(VSData->RenderingResources.InstanceData, TEXT("InstanceData resource handle is NULL!"))
+	checkf(VSData->RenderingResources.IndirectDrawArgs, TEXT("IndirectDrawArgs resource handle is NULL!"))
+
+	checkf(VSData->RenderingResources.InstanceData == InstanceDataBuffer->GetSRV(),
+		TEXT("CustomGrass: InstanceData resource handle "
+	   "doesn't correspond with authoritative InstanceDataBuffer"));
+	
+	checkf(VSData->RenderingResources.IndirectDrawArgs == IndirectDrawArgsBuffer[VSData->TileIndex]->GetRHI(),
+		TEXT("CustomGrass: IndirectDrawArgsBuffer resource handle "
+	   "doesn't correspond with authoritative IndirectDrawArgsBuffer"));
+}
+
 void CustomGrass::FTileDebugChannel::SetDebugStateForWork(int32 WorkIndex, const FProxyRenderWorkDesc& Work)
 {
 	check(IsInAnyRenderingThread());
 	
-	DebugState[WorkIndex] = FTileDebugInfoRT(Work.Proxy->TileIndex, Work.VSData->LOD);
+	DebugState[WorkIndex] = FTileDebugInfoRT(Work.Proxy->GetPrimitiveComponentId(), Work.VSData->LOD);
 }
 
 void CustomGrass::FTileDebugChannel::PublishDebugStateSnapshot_RenderThread()
@@ -697,7 +748,7 @@ void CustomGrass::FTileDebugChannel::PublishDebugStateSnapshot_RenderThread()
 	{
 		if (this)
 		{
-			this->GTDebugStateSnapshot = DebugStateSnapshot;
+			GTDebugStateSnapshot = DebugStateSnapshot;
 		}
 	});
 }

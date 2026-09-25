@@ -57,7 +57,7 @@ void FCustomGrassDebugVisualizer::ScreenPrintBase(Func&& PrintFunction) const
 		for (const CustomGrass::FTileDebugInfoRT TileDebugInfo : RTDebugState)
 		{
 			GEngine->AddOnScreenDebugMessage(
-				TileDebugInfo.TileIndex,
+				static_cast<uint64>(TileDebugInfo.TileComponentId.PrimIDValue),
 				1.0f,
 				FColor::Yellow,
 				*PrintFunction(TileDebugInfo));
@@ -71,8 +71,8 @@ void FCustomGrassDebugVisualizer::ScreenPrintLODs() const
 	{
 		ScreenPrintBase([](const CustomGrass::FTileDebugInfoRT TileDebugInfo)
 		{
-			return FString::Printf(TEXT("GrassTile_[%d]_LOD"),
-				static_cast<int32>(TileDebugInfo.LOD));
+			return FString::Printf(TEXT("GrassTile[%u]_LOD%d"),
+				TileDebugInfo.TileComponentId.PrimIDValue, static_cast<int32>(TileDebugInfo.LOD));
 		});
 	}
 }
@@ -83,7 +83,7 @@ void FCustomGrassDebugVisualizer::ScreenPrintRenderedTiles() const
 	{
 		ScreenPrintBase([](const CustomGrass::FTileDebugInfoRT TileDebugInfo)
 		{
-			return FString::Printf(TEXT("GrassTile_[%d]"), TileDebugInfo.TileIndex);
+			return FString::Printf(TEXT("GrassTile[%u]"), TileDebugInfo.TileComponentId.PrimIDValue);
 		});		
 	}
 }

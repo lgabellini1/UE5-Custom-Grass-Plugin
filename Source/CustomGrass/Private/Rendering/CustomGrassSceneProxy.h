@@ -14,6 +14,9 @@ class FCustomGrassSceneProxy final : public FPrimitiveSceneProxy
 public:
 	FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent& Component,
 		FCustomGrassRenderSystem* RenderSystem, int32 TileIndex);
+	virtual ~FCustomGrassSceneProxy() override;
+
+	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override;
 
 	const CustomGrass::FProxyLandscapeData& GetLandscapeData() const { return LandscapeData; }
 
@@ -22,8 +25,6 @@ public:
 protected:
 	virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
 	virtual void DestroyRenderThreadResources() override;
-	
-	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override;
 	
 	virtual void GetDynamicMeshElements(
 		const TArray<const FSceneView*>& Views,
