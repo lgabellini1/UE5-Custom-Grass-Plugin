@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "Types.h"
+#include "CustomGrassDebugTypes.h"
 
 class ULandscapeComponent;
 

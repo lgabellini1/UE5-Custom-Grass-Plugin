@@ -59,5 +59,5 @@ namespace CustomGrass
 		SHADER_PARAMETER(float, ProxyZOffset)
 	END_SHADER_PARAMETER_STRUCT()
 
-	const FIntVector GroupThreadCount = FIntVector(8, 8, 1);
+	const FIntVector GShaderGroupThreadCount = FIntVector(8, 8, 1);
 }

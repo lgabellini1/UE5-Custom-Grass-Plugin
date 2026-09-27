@@ -1,4 +1,4 @@
-﻿#include "ConsoleVars.h"
+﻿#include "CustomGrassConsoleVars.h"
 
 namespace CustomGrass
 {

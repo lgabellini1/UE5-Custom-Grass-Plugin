@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "ShaderParameterStruct.h"
-#include "ShaderTypes.h"
+#include "CustomGrassShaderTypes.h"
 
 class FInstanceGrassBladeCS : public FGlobalShader
 {

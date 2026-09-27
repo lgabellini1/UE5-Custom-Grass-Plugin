@@ -1,13 +1,13 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Types.h"
+#include "CustomGrassTypes.h"
 #include "CustomGrassPrimitiveComponent.generated.h"
 
 class UCustomGrassWorldSubsystem;
-class ULandscapeComponent;
 class UCustomGrassShadowProxyComponent;
 class UCustomGrassDataAsset;
+class ULandscapeComponent;
 
 UCLASS()
 class UCustomGrassPrimitiveComponent : public UPrimitiveComponent

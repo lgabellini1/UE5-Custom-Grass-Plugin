@@ -1,6 +1,6 @@
-﻿#include "Utilities.h"
+﻿#include "CustomGrassUtils.h"
+#include "Rendering/CustomGrassRenderTypes.h"
 #include "Landscape.h"
-#include "Rendering/RenderTypes.h"
 
 FVector2D CustomGrass::GetLandscapeExtentInWorldUnits(const ALandscape& Landscape)
 {

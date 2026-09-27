@@ -1,8 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Types.h"
-#include "Rendering/RenderTypes.h"
+#include "CustomGrassTypes.h"
 #include "CustomGrassDataAsset.generated.h"
 
 namespace CustomGrass
@@ -13,6 +12,9 @@ namespace CustomGrass
 	DECLARE_MULTICAST_DELEGATE(FOnDataAssetValuesChanged)
 	inline FOnDataAssetValuesChanged DataAssetValuesChanged;
 }
+
+template <typename T>
+struct TRandomVariationValue;
 
 // Reflection-compatible version of the TRandomVariationValue struct for the editor.
 USTRUCT(BlueprintType)
@@ -26,10 +28,7 @@ struct FRandomVariationFloatProperty
 	UPROPERTY(EditAnywhere, meta=(ClampMin="0.0", ClampMax="1.0"))
 	float VariationPercentage;
 
-	TRandomVariationValue<float> ToValue() const
-	{
-		return TRandomVariationValue(Value, VariationPercentage);
-	}
+	TRandomVariationValue<float> ToValue() const;
 };
 
 UCLASS()

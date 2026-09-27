@@ -1,5 +1,5 @@
-﻿#include "FCustomGrassDebugVisualizer.h"
-#include "ConsoleVars.h"
+﻿#include "CustomGrassDebugVisualizer.h"
+#include "Console/CustomGrassConsoleVars.h"
 #include "Landscape.h"
 
 void FCustomGrassDebugVisualizer::Initialize(const UWorld& InWorld)

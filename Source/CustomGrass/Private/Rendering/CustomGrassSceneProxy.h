@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "RenderTypes.h"
+#include "CustomGrassRenderTypes.h"
 
 struct FCustomGrassMaterial;
 class ULandscapeComponent;

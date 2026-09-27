@@ -1,9 +1,8 @@
 ﻿#include "CustomGrassPrimitiveComponent.h"
+#include "CustomGrassWorldSubsystem.h"
 #include "CustomGrassDataAsset.h"
 #include "Rendering/CustomGrassSceneProxy.h"
 #include "Rendering/CustomGrassShadowProxyComponent.h"
-#include "CustomGrassWorldSubsystem.h"
-#include "LandscapeComponent.h"
 #include "Landscape.h"
 
 UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInitializer& ObjectInitializer)

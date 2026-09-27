@@ -12,4 +12,9 @@ namespace CustomGrass
 	inline constexpr float MaxGrassBladeWidth  = 2.f;
 	inline constexpr float MaxGrassBladeTilt   = 10.f;
 	inline constexpr float MaxGrassBladeBend   = 10.f;
+
+	inline const FIntPoint ShadowMapTextureSlotResolution = FIntPoint(512, 512);
+
+	inline constexpr int32 ShadowMapAtlasGridSize   = MaxRenderedTiles / 2;
+	inline const FIntPoint ShadowMapAtlasResolution = ShadowMapTextureSlotResolution * ShadowMapAtlasGridSize;
 }

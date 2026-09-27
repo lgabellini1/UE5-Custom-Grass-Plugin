@@ -5,9 +5,9 @@
 #include "StaticMeshOperations.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Landscape.h"
-#include "Constants.h"
+#include "CustomGrassConstants.h"
 #include "CustomGrassWorldSubsystem.h"
-#include "Utilities.h"
+#include "CustomGrassUtils.h"
 
 UCustomGrassShadowProxyComponent::UCustomGrassShadowProxyComponent(const FObjectInitializer& ObjectInitializer)
 	: UStaticMeshComponent(ObjectInitializer)

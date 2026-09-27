@@ -1,10 +1,8 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Constants.h"
-#include "Types.h"
+#include "CustomGrassTypes.h"
 #include "Landscape.h"
-#include "LandscapeComponent.h"
 
 class FCustomGrassSceneProxy;
 
@@ -33,11 +31,6 @@ namespace CustomGrass
 
 	inline FIntPoint GetInstanceCount(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].InstanceCount; }
 	inline float GetDistanceThreshold(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].DistanceThreshold; }
-
-	inline const FIntPoint ShadowMapTextureSlotResolution = FIntPoint(512, 512);
-
-	inline constexpr int32 ShadowMapAtlasGridSize   = MaxRenderedTiles / 2;
-	inline const FIntPoint ShadowMapAtlasResolution = ShadowMapTextureSlotResolution * ShadowMapAtlasGridSize;
 
 	struct FRenderingResourceHandles
 	{
@@ -111,9 +104,3 @@ namespace CustomGrass
 		}
 	};
 }
-
-struct FCustomGrassBatchUserData final : public FOneFrameResource
-{
-	const CustomGrass::FProxyVertexShaderData* VSData;
-	CustomGrass::FVertexShaderParams DataAssetParams;
-};

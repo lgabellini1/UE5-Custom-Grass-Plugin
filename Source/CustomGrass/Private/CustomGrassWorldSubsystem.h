@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "FCustomGrassDebugVisualizer.h"
+#include "Debug/CustomGrassDebugVisualizer.h"
 #include "Rendering/CustomGrassRenderSystem.h"
 #include "CustomGrassWorldSubsystem.generated.h"
 

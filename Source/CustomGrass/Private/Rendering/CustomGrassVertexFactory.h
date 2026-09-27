@@ -1,9 +1,16 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "RenderTypes.h"
+#include "CustomGrassRenderTypes.h"
+#include "CustomGrassTypes.h"
 
 class FCustomGrassRenderSystem;
+
+struct FCustomGrassBatchUserData final : FOneFrameResource
+{
+	const CustomGrass::FProxyVertexShaderData* VSData;
+	CustomGrass::FVertexShaderParams DataAssetParams;
+};
 
 /**
  * Custom empty index buffer. In theory, a proper index buffer

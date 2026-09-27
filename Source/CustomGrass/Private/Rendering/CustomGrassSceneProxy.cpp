@@ -1,9 +1,8 @@
 ﻿#include "CustomGrassSceneProxy.h"
-#include "Rendering/CustomGrassRenderSystem.h"
 #include "CustomGrassPrimitiveComponent.h"
-#include "Landscape.h"
-#include "LandscapeComponent.h"
+#include "CustomGrassRenderSystem.h"
 #include "CustomGrassVertexFactory.h"
+#include "Landscape.h"
 #include "RenderGraphUtils.h"
 
 FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveComponent& Component,
