@@ -20,22 +20,22 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
+	virtual void Tick(float DeltaTime) override;
+
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
-
-	virtual void Tick(float DeltaTime) override;
-	
 	
 	virtual TStatId GetStatId() const override { return TStatId(); }
+
 	
 	FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem.Get(); }
 	
-	const UCustomGrassDataAsset& GetDataAsset() const { return *GrassDataAsset; }
+	const UCustomGrassDataAsset* GetDataAsset() const { return GrassDataAsset; }
 
-	UTextureRenderTarget2D* GetShadowMapTextureAtlas() { return ShadowMapTextureAtlas; }
+	UTextureRenderTarget2D* GetShadowMapTextureAtlas() const { return ShadowMapTextureAtlas; }
 	
-protected:
+private:
 	TUniquePtr<FCustomGrassRenderSystem> RenderSystem;
 	void DismantleRenderSystem();
 	bool bPendingRenderSystemDestroy;
@@ -47,6 +47,7 @@ protected:
 		Components	 = 1 << 1,
 		Rendering    = 1 << 2
 	};
+	
 	FRIEND_ENUM_CLASS_FLAGS(EDirtyFlags);
 	
 	UPROPERTY()
@@ -65,7 +66,7 @@ protected:
 	void OnDataAssetLoaded();
 	void OnDataAssetValuesChanged();
 	
-	bool bRunningState = false;
+	bool bIsRunning = false;
 	void UpdateRunningState();
 	
 	void UpdateRenderState() const;
@@ -79,4 +80,5 @@ protected:
 	void CreateShadowMapTextureAtlas();
 
 	FCustomGrassDebugVisualizer DebugVisualizer;
+	void UpdateDebugVisualization(float DeltaTime);
 };

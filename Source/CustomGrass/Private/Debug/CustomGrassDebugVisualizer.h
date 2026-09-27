@@ -28,6 +28,7 @@ protected:
 
 	template <typename Func>
 	void ScreenPrintBase(Func&& PrintFunction) const;
+	
 	void ScreenPrintLODs() const;
 	void ScreenPrintRenderedTiles() const;
 	

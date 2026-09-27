@@ -19,21 +19,21 @@ struct FCustomGrassBatchUserData final : FOneFrameResource
 class FCustomGrassIndexBuffer : public FIndexBuffer
 {
 public:
-	explicit FCustomGrassIndexBuffer(ECustomGrassLOD LOD)
-	: LOD(LOD), NumIndices(CustomGrass::GetGrassBladeIndicesCount(LOD))
-	{}
+	explicit FCustomGrassIndexBuffer(ECustomGrassLOD LOD);
 	
 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 
 	const ECustomGrassLOD LOD;
 
-protected:
-	int32 NumIndices;
+private:
+	const int32 NumIndices;
 };
 
 class FCustomGrassVertexFactory : public FVertexFactory
 {
 	DECLARE_VERTEX_FACTORY_TYPE(FCustomGrassVertexFactory);
+
+	friend class FCustomGrassVertexFactoryShaderParams;
 
 public:
 	FCustomGrassVertexFactory(ERHIFeatureLevel::Type InFeatureLevel, const FCustomGrassRenderSystem* RenderSystem);
@@ -43,14 +43,17 @@ public:
 	
 	static bool ShouldCompilePermutation(const FVertexFactoryShaderPermutationParameters &Parameters);
 	
-	static void ModifyCompilationEnvironment(const FVertexFactoryShaderPermutationParameters& Parameters,
+	static void ModifyCompilationEnvironment(
+		const FVertexFactoryShaderPermutationParameters& Parameters,
 		FShaderCompilerEnvironment& OutEnvironment ) {}
-	static void ValidateCompiledResult(const FVertexFactoryType* Type, EShaderPlatform Platform,
-		const FShaderParameterMap& ParameterMap, TArray<FString>& OutErrors) {}
+	
+	static void ValidateCompiledResult(
+		const FVertexFactoryType* Type,
+		EShaderPlatform Platform,
+		const FShaderParameterMap& ParameterMap,
+		TArray<FString>& OutErrors) {}
 
 	FIndexBuffer* GetIndexBuffer(ECustomGrassLOD LOD) const { return IndexBuffers[static_cast<int32>(LOD)].Get(); }
-
-	const FCustomGrassRenderSystem* GetRenderSystem() const { return RenderSystem; }
 	
 	static constexpr EVertexFactoryFlags Flags =
 		EVertexFactoryFlags::UsedWithMaterials	
@@ -59,7 +62,7 @@ public:
 	  | EVertexFactoryFlags::SupportsCachingMeshDrawCommands;
 
 protected:
-	TStaticArray<TUniquePtr<FCustomGrassIndexBuffer>, CustomGrass::NumLODs> IndexBuffers;
+	TStaticArray<TUniquePtr<FCustomGrassIndexBuffer>, CustomGrass::GNumLODs> IndexBuffers;
 
 	const FCustomGrassRenderSystem* RenderSystem;
 };

@@ -16,21 +16,22 @@ UCustomGrassPrimitiveComponent::UCustomGrassPrimitiveComponent(const FObjectInit
 	bCastContactShadow = true;
 }
 
-void UCustomGrassPrimitiveComponent::Initialize(
-	const FInitConfig& Config,
-	ULandscapeComponent& AssociatedLandscapeTile,
+void UCustomGrassPrimitiveComponent::Initialize(const FInitConfig& Config,
 	const UCustomGrassWorldSubsystem& WorldSubsystem)
 {
-	LandscapeTile = &AssociatedLandscapeTile;
+	if (const UCustomGrassDataAsset* DataAsset = WorldSubsystem.GetDataAsset())
+	{
+		LandscapeTile = &Config.AssociatedLandscapeTile;
 	
-	Material  = Config.Material;
-	TileIndex = Config.TileIndex;
+		Material  = Config.Material;
+		TileIndex = Config.TileIndex;
 
-	RegisterComponentWithWorld(&WorldSubsystem.GetWorldRef());
-	AttachToComponent(LandscapeTile, FAttachmentTransformRules::KeepRelativeTransform);
+		RegisterComponentWithWorld(&WorldSubsystem.GetWorldRef());
+		AttachToComponent(LandscapeTile, FAttachmentTransformRules::KeepRelativeTransform);
 
-	SetCastShadow(WorldSubsystem.GetDataAsset().bShadowsEnabled);
-	CreateShadowProxy(WorldSubsystem.GetDataAsset());
+		SetCastShadow(DataAsset->bShadowsEnabled);
+		CreateShadowProxy(*DataAsset);				
+	}
 }
 
 void UCustomGrassPrimitiveComponent::UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset)
@@ -63,16 +64,23 @@ FPrimitiveSceneProxy* UCustomGrassPrimitiveComponent::CreateSceneProxy()
 
 FBoxSphereBounds UCustomGrassPrimitiveComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
-	const FBox& TileBoundingBox = LandscapeTile->GetLandscapeInfo()->GetLoadedBounds();
-
 	const auto WorldSubsystem =
 		GetWorld()->GetSubsystemChecked<UCustomGrassWorldSubsystem>();
-	const auto& GrassDataAsset = WorldSubsystem->GetDataAsset();
 	
-	constexpr float VerticalOffset = 100.f;
+	if (const UCustomGrassDataAsset* DataAsset = WorldSubsystem->GetDataAsset();
+		DataAsset && LandscapeTile)
+	{
+		const FBox& TileBoundingBox = LandscapeTile->GetLandscapeInfo()->GetLoadedBounds();
+	
+		constexpr float VerticalPadding = 100.f;
 
-	return FBoxSphereBounds(TileBoundingBox.ExpandBy(FVector::UnitZ() * VerticalOffset,
-		FVector::UnitZ() * (GrassDataAsset.Height.Value + VerticalOffset)));
+		return FBoxSphereBounds(TileBoundingBox.ExpandBy(FVector::UnitZ() * VerticalPadding,
+			FVector::UnitZ() * (DataAsset->Height.Value + VerticalPadding)));		
+	}
+	else
+	{
+		return FBoxSphereBounds();
+	}
 }
 
 void UCustomGrassPrimitiveComponent::CreateShadowProxy(const UCustomGrassDataAsset& DataAsset)

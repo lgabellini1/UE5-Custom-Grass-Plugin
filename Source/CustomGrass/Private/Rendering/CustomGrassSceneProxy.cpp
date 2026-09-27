@@ -10,7 +10,7 @@ FCustomGrassSceneProxy::FCustomGrassSceneProxy(const UCustomGrassPrimitiveCompon
 	: FPrimitiveSceneProxy(&Component, FName(
 		FString(TEXT("CustomGrassTileProxy_[")) + FString::FromInt(TileIndex) + FString(TEXT("]")))),
 	TileIndex(TileIndex), RenderSystem(RenderSystem),
-	LandscapeData(CustomGrass::FProxyLandscapeData(Component.GetAssociatedLandscapeTile())),
+	LandscapeData(CustomGrass::FProxyLandscapeData(*Component.GetAssociatedLandscapeTile())),
 	MaterialConfig(Component.GetCustomGrassMaterial().TwoSided, GetScene().GetShaderPlatform()),
 	NoTwoSideMaterialConfig(Component.GetCustomGrassMaterial().NoTwoSided, GetScene().GetShaderPlatform())
 {

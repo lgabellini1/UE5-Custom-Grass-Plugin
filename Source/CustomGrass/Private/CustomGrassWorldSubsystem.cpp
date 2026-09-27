@@ -95,33 +95,35 @@ void UCustomGrassWorldSubsystem::SpawnComponents()
 	
 	for (int32 i = 0; i < RegisteredLandscapeTiles.Num(); i++)
 	{
-		ULandscapeComponent* LandscapeTile = RegisteredLandscapeTiles[i];
-		check(LandscapeTile);
+		if (ULandscapeComponent* LandscapeTile = RegisteredLandscapeTiles[i])
+		{
+			auto* GrassTileComponent = NewObject<UCustomGrassPrimitiveComponent>(
+				LandscapeTile->GetOwner(),
+				UCustomGrassPrimitiveComponent::StaticClass(),
+				*FString::Printf(TEXT("CustomGrassTile[%d]"), i)
+			);
 		
-		auto* GrassTileComponent = NewObject<UCustomGrassPrimitiveComponent>(
-			LandscapeTile->GetOwner(),
-			UCustomGrassPrimitiveComponent::StaticClass(),
-			*FString::Printf(TEXT("CustomGrassTile[%d]"), i)
-		);
+			const auto Material = FCustomGrassMaterial(GrassDataAsset->GrassMaterial, 
+				GrassDataAsset->GrassMaterial_NoTwoSided);
 		
-		const auto Material = FCustomGrassMaterial(GrassDataAsset->GrassMaterial, 
-			GrassDataAsset->GrassMaterial_NoTwoSided);
-		
-		GrassTileComponent->Initialize(
-			UCustomGrassPrimitiveComponent::FInitConfig(Material, i),
-			*LandscapeTile,
-			*this
-		);
+			GrassTileComponent->Initialize(
+				UCustomGrassPrimitiveComponent::FInitConfig(Material, *LandscapeTile, i),
+				*this
+			);
 				
-		GrassTiles.Add(GrassTileComponent);
+			GrassTiles.Add(GrassTileComponent);			
+		}
 	}
 }
 
 void UCustomGrassWorldSubsystem::DespawnComponents()
 {
-	for (const auto Tile : GrassTiles)
+	for (UCustomGrassPrimitiveComponent* GrassTile : GrassTiles)
 	{
-		Tile->DestroyComponent();
+		if (GrassTile)
+		{
+			GrassTile->DestroyComponent();
+		}
 	}
 	
 	GrassTiles.Empty();
@@ -152,14 +154,12 @@ void UCustomGrassWorldSubsystem::UpdateRunningState()
 	const bool bIsDataAssetLoaded  = GrassDataAsset != nullptr;
 	const bool bIsCVarGrassEnabled = (CustomGrass::CVarGrassEnabled.GetValueOnGameThread() == 1);
 	
-	const bool bExpectedRunningState = bIsDataAssetLoaded
-		&& bIsCVarGrassEnabled;
-
-	if (bExpectedRunningState != bRunningState)
+	if (const bool bExpectedRunningState = bIsDataAssetLoaded && bIsCVarGrassEnabled;
+		bExpectedRunningState != bIsRunning)
 	{
-		bRunningState = bExpectedRunningState;
+		bIsRunning = bExpectedRunningState;
 
-		if (bRunningState)
+		if (bIsRunning)
 		{
 			RenderSystem = MakeUnique<FCustomGrassRenderSystem>(*GrassDataAsset,
 				CustomGrass::FTextureRenderTargetsGT(ShadowMapTextureAtlas));
@@ -175,25 +175,30 @@ void UCustomGrassWorldSubsystem::UpdateRunningState()
 
 void UCustomGrassWorldSubsystem::UpdateRenderState() const
 {
+	if (!GrassDataAsset) return;
+	
 	if (RenderSystem)
 	{
 		RenderSystem->RebuildRenderStateFromGameThread(*GrassDataAsset);
 	}
 
-	for (const TObjectPtr<UCustomGrassPrimitiveComponent>& GrassTile : GrassTiles)
+	for (UCustomGrassPrimitiveComponent* GrassTile : GrassTiles)
 	{
-		GrassTile->UpdateRenderSettings(*GrassDataAsset);
+		if (GrassTile)
+		{
+			GrassTile->UpdateRenderSettings(*GrassDataAsset);
+		}
 	}
 }
 
 void UCustomGrassWorldSubsystem::UpdateComponents()
 {
 	if (const bool bAreComponentsSpawned = !GrassTiles.IsEmpty();
-		bRunningState && !bAreComponentsSpawned)
+		bIsRunning && !bAreComponentsSpawned)
 	{
 		SpawnComponents();
 	}
-	else if (!bRunningState)
+	else if (!bIsRunning)
 	{
 		DespawnComponents();
 	}
@@ -219,15 +224,20 @@ void UCustomGrassWorldSubsystem::Tick(float DeltaTime)
 		UpdateComponents();
 	}
 
-	const auto DebugStateSnapshot = RenderSystem->TileDebugChannel.GetDebugStateSnapshot_GameThread();
-	DebugVisualizer.UpdateRTDebugState(DebugStateSnapshot);
-	
-	DebugVisualizer.Tick(DeltaTime);
+	UpdateDebugVisualization(DeltaTime);
 
 	if (bPendingRenderSystemDestroy)
 	{
 		DismantleRenderSystem();
 	}
+}
+
+void UCustomGrassWorldSubsystem::UpdateDebugVisualization(float DeltaTime)
+{
+	const auto DebugStateSnapshot = RenderSystem->GetDebugStateSnapshot_GameThread();
+	DebugVisualizer.UpdateRTDebugState(DebugStateSnapshot);
+	
+	DebugVisualizer.Tick(DeltaTime);
 }
 
 void UCustomGrassWorldSubsystem::DismantleRenderSystem()

@@ -55,43 +55,55 @@ void UCustomGrassShadowProxyComponent::UpdateRenderSettings(const UCustomGrassDa
 
 void UCustomGrassShadowProxyComponent::BuildMesh()
 {
-	ULandscapeComponent& LandscapeTile = ParentGrassTile->GetAssociatedLandscapeTile();
+	if (ULandscapeComponent* LandscapeTile = ParentGrassTile->GetAssociatedLandscapeTile())
+	{
+		const auto MeshBuilder = FCustomGrassShadowProxyMeshBuilder(*LandscapeTile, PlaneResolution);
+		UStaticMesh* Mesh = MeshBuilder.Build(this);
 
-	const auto MeshBuilder = FCustomGrassShadowProxyMeshBuilder(LandscapeTile, PlaneResolution);
-	UStaticMesh* Mesh = MeshBuilder.Build(this);
-
-	Mesh->GetStaticMaterials().Add(FStaticMaterial(GetMaterial(0)));
+		Mesh->GetStaticMaterials().Add(FStaticMaterial(GetMaterial(0)));
 	
-	SetStaticMesh(Mesh);
+		SetStaticMesh(Mesh);		
+	}
 }
 
 UMaterialInstanceDynamic* UCustomGrassShadowProxyComponent::CreateMID(
 	const UCustomGrassDataAsset& DataAsset,
 	const UCustomGrassPrimitiveComponent& ParentGrassTile)
 {
-	auto* World = ParentGrassTile.GetWorld();
+	if (const ULandscapeComponent* LandscapeTile = ParentGrassTile.GetAssociatedLandscapeTile())
+	{
+		UWorld* World = ParentGrassTile.GetWorld();
 	
-	auto* ShadowProxyMID = UMaterialInstanceDynamic::Create(
-		DataAsset.ShadowProxyMaterial, World);
+		auto* ShadowProxyMID = UMaterialInstanceDynamic::Create(
+			DataAsset.ShadowProxyMaterial, World);
 
-	const auto Subsystem = World->GetSubsystemChecked<UCustomGrassWorldSubsystem>();
-	
-	ShadowProxyMID->SetTextureParameterValue(
-		TEXT("ShadowWPOTextureAtlas"), Subsystem->GetShadowMapTextureAtlas());
-	ShadowProxyMID->SetScalarParameterValue(
-		TEXT("AtlasGridSize"), CustomGrass::MaxRenderedTiles / 2);
-
-	const auto* LandscapeActor = ParentGrassTile.GetAssociatedLandscapeTile().GetLandscapeActor();
-	
-	ShadowProxyMID->SetVectorParameterValue(
-		TEXT("LandscapeWorldOrigin"), FLinearColor(LandscapeActor->GetActorLocation()));
-	ShadowProxyMID->SetScalarParameterValue(
-		TEXT("LandscapeWorldSize"), CustomGrass::GetLandscapeExtentInWorldUnits(*LandscapeActor).X);
-	
-	ShadowProxyMID->SetScalarParameterValue(
-		TEXT("MaxGrassHeight"), CustomGrass::MaxGrassBladeHeight);	
+		const auto Subsystem =
+			World->GetSubsystemChecked<UCustomGrassWorldSubsystem>();
 		
-	return ShadowProxyMID;	
+		if (UTextureRenderTarget2D* ShadowMapTextureAtlas = Subsystem->GetShadowMapTextureAtlas())
+		{
+			ShadowProxyMID->SetTextureParameterValue(
+				TEXT("ShadowWPOTextureAtlas"), ShadowMapTextureAtlas);
+			ShadowProxyMID->SetScalarParameterValue(
+				TEXT("AtlasGridSize"), CustomGrass::MaxRenderedTiles / 2);			
+		}
+
+		const ALandscape* LandscapeActor = LandscapeTile->GetLandscapeActor();
+	
+		ShadowProxyMID->SetVectorParameterValue(
+			TEXT("LandscapeWorldOrigin"), FLinearColor(LandscapeActor->GetActorLocation()));
+		ShadowProxyMID->SetScalarParameterValue(
+			TEXT("LandscapeWorldSize"), CustomGrass::GetLandscapeExtentInWorldUnits(*LandscapeActor).X);
+	
+		ShadowProxyMID->SetScalarParameterValue(
+			TEXT("MaxGrassHeight"), CustomGrass::MaxGrassBladeHeight);	
+		
+		return ShadowProxyMID;	
+	}
+	else
+	{
+		return nullptr;
+	}
 }
 
 FCustomGrassShadowProxyMeshBuilder::FCustomGrassShadowProxyMeshBuilder(
@@ -107,7 +119,7 @@ UStaticMesh* FCustomGrassShadowProxyMeshBuilder::Build(UObject* Outer) const
 	StaticMesh->InitResources();
 	StaticMesh->SetLightingGuid();
 
-	UStaticMeshDescription* Desc = BuildMeshDescription(StaticMesh, Outer);
+	UStaticMeshDescription* Desc = BuildMeshDescription(*StaticMesh, Outer);
 
 	FStaticMeshOperations::ComputeTriangleTangentsAndNormals(Desc->GetMeshDescription());
 	FStaticMeshOperations::ComputeTangentsAndNormals(Desc->GetMeshDescription(),
@@ -125,10 +137,10 @@ UStaticMesh* FCustomGrassShadowProxyMeshBuilder::Build(UObject* Outer) const
 }
 
 UStaticMeshDescription* FCustomGrassShadowProxyMeshBuilder::BuildMeshDescription(
-	const UStaticMesh* Mesh, 
+	const UStaticMesh& Mesh, 
 	UObject* Outer) const
 {
-	UStaticMeshDescription* Desc = Mesh->CreateStaticMeshDescription(Outer);
+	UStaticMeshDescription* Desc = Mesh.CreateStaticMeshDescription(Outer);
     const FPolygonGroupID PolyGroup = Desc->CreatePolygonGroup();
 
 	const int32 NumQuads = MeshResolution;

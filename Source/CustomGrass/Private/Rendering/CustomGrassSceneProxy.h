@@ -22,7 +22,7 @@ public:
 
 	const int32 TileIndex;
 
-protected:
+private:
 	virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
 	virtual void DestroyRenderThreadResources() override;
 	

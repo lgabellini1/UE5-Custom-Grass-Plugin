@@ -25,9 +25,9 @@ namespace CustomGrass
 		{ECustomGrassLOD::LOD2, LOD2Settings}}
 	);
 
-	inline int32 GetGrassBladeVertexCount(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].VertexCount; }
+	inline int32 GetGrassBladeVertexCount(ECustomGrassLOD LOD)   { return LODSettingsMap[LOD].VertexCount; }
 	inline int32 GetGrassBladeTriangleCount(ECustomGrassLOD LOD) { return GetGrassBladeVertexCount(LOD) - 2; }
-	inline int32 GetGrassBladeIndicesCount(ECustomGrassLOD LOD) { return GetGrassBladeTriangleCount(LOD) + 2; }
+	inline int32 GetGrassBladeIndicesCount(ECustomGrassLOD LOD)  { return GetGrassBladeTriangleCount(LOD) + 2; }
 
 	inline FIntPoint GetInstanceCount(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].InstanceCount; }
 	inline float GetDistanceThreshold(ECustomGrassLOD LOD) { return LODSettingsMap[LOD].DistanceThreshold; }
@@ -46,8 +46,11 @@ namespace CustomGrass
 		ECustomGrassLOD LOD;
 		double GameTime;
 
-		FProxyVertexShaderData(FRenderingResourceHandles RenderingResources, ECustomGrassLOD LOD, const FGameTime& Time)
-			: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD), GameTime(Time.GetWorldTimeSeconds())
+		FProxyVertexShaderData(
+			FRenderingResourceHandles RenderingResources,
+			ECustomGrassLOD LOD,
+			const FGameTime& Time)
+		: RenderingResources(MoveTemp(RenderingResources)), LOD(LOD), GameTime(Time.GetWorldTimeSeconds())
 		{}
 
 		FProxyVertexShaderData(ECustomGrassLOD LOD, const FGameTime& Time)

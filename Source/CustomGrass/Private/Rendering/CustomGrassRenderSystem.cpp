@@ -93,8 +93,8 @@ ENUM_CLASS_FLAGS(FCustomGrassRenderSystem::ERenderSystemState);
 
 FCustomGrassRenderSystem::FCustomGrassRenderSystem(const UCustomGrassDataAsset& DataAsset,
 	const CustomGrass::FTextureRenderTargetsGT& RenderTargets)
-: SceneViewExtension(FSceneViewExtensions::NewExtension<FCustomGrassSceneViewExtension>(this)),
-DataAssetProxy(DataAsset)
+: DataAssetProxy(DataAsset),
+SceneViewExtension(FSceneViewExtensions::NewExtension<FCustomGrassSceneViewExtension>(this))
 {
 	check(GEngine);
 	GEngine->GetPreRenderDelegateEx().AddRaw(this, &FCustomGrassRenderSystem::BeginFrame);
@@ -302,7 +302,7 @@ void FCustomGrassRenderSystem::RebuildRenderStateFromGameThread(const UCustomGra
 {
 	check(IsInGameThread());
 	
-	BuildDataAssetProxy(DataAsset);
+	RebuildDataAssetProxy(DataAsset);
 }
 
 bool FCustomGrassRenderSystem::IsViewSameBetweenFrames() const
@@ -606,7 +606,7 @@ void FCustomGrassRenderSystem::AddComputePass_InstanceGrassBlades(
 	
 	const FIntVector ThreadCount = FIntVector(CustomGrass::GetInstanceCount(Work.VSData->LOD).X,
 		CustomGrass::GetInstanceCount(Work.VSData->LOD).Y, 1); // Total thread count, split among groups
-	const int32 GroupSize 		 = CustomGrass::GroupThreadCount.X;
+	const int32 GroupSize 		 = CustomGrass::GShaderGroupThreadCount.X;
 	const FIntVector GroupCount  = FComputeShaderUtils::GetGroupCount(ThreadCount, GroupSize);
 	FComputeShaderUtils::ValidateGroupCount(GroupCount);
 
@@ -697,7 +697,7 @@ CustomGrass::FVolatileBuffers FCustomGrassRenderSystem::CreatePerFrameResources(
 	return Buffers;
 }
 
-void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
+void FCustomGrassRenderSystem::RebuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 {
 	check(IsInGameThread());
 
@@ -711,7 +711,7 @@ void FCustomGrassRenderSystem::BuildDataAssetProxy(const UCustomGrassDataAsset& 
 	);
 }
 
-void FCustomGrassRenderSystem::CompareAndCheckResourcesValidity(
+void FCustomGrassRenderSystem::CompareAndCheckVSResourcesValidity(
 	const CustomGrass::FProxyVertexShaderData* VSData) const
 {
 	if (VSData->TileIndex < SelectedWork.Num())
@@ -730,6 +730,11 @@ void FCustomGrassRenderSystem::CompareAndCheckResourcesValidity(
 	checkf(VSData->RenderingResources.IndirectDrawArgs == IndirectDrawArgsBuffer[VSData->TileIndex]->GetRHI(),
 		TEXT("CustomGrass: IndirectDrawArgsBuffer resource handle "
 	   "doesn't correspond with authoritative IndirectDrawArgsBuffer"));
+}
+
+CustomGrass::FRTDebugState FCustomGrassRenderSystem::GetDebugStateSnapshot_GameThread() const
+{
+	return TileDebugChannel.GetDebugStateSnapshot_GameThread();	
 }
 
 void CustomGrass::FTileDebugChannel::SetDebugStateForWork(int32 WorkIndex, const FProxyRenderWorkDesc& Work)

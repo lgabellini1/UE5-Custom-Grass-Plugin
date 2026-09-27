@@ -10,6 +10,10 @@ IMPLEMENT_TYPE_LAYOUT(FCustomGrassVertexFactoryShaderParams);
 IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(FCustomGrassVertexFactory, SF_Vertex, FCustomGrassVertexFactoryShaderParams);
 IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(FCustomGrassVertexFactory, SF_Pixel, FCustomGrassVertexFactoryShaderParams);
 
+FCustomGrassIndexBuffer::FCustomGrassIndexBuffer(ECustomGrassLOD LOD)
+: LOD(LOD), NumIndices(CustomGrass::GetGrassBladeIndicesCount(LOD))
+{}
+
 void FCustomGrassIndexBuffer::InitRHI(FRHICommandListBase& RHICmdList)
 {
 	// Implementation taken from RawIndexBuffer.cpp
@@ -136,8 +140,8 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	checkf(VSData->TileBufferOffset != INDEX_NONE,
 		TEXT("CustomGrass: vertex shader resources were not initialized by the render system!"));
 
-	const auto* RenderSystem = static_cast<const FCustomGrassVertexFactory*>(VertexFactory)->GetRenderSystem();
-	RenderSystem->CompareAndCheckResourcesValidity(VSData);
+	const auto* RenderSystem = static_cast<const FCustomGrassVertexFactory*>(VertexFactory)->RenderSystem;
+	RenderSystem->CompareAndCheckVSResourcesValidity(VSData);
 		
 	ShaderBindings.Add(InstanceDataBuffer, VSData->RenderingResources.InstanceData);
 	ShaderBindings.Add(TileBufferOffset, VSData->TileBufferOffset);

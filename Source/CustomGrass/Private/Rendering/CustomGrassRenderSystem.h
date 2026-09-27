@@ -1,16 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "RenderGraphResources.h"
-#include "RenderTypes.h"
-#include "ShaderTypes.h"
-#include "Types.h"
+#include "CustomGrassRenderTypes.h"
+#include "CustomGrassShaderTypes.h"
+#include "CustomGrassTypesInternal.h"
+#include "Debug/CustomGrassDebugTypes.h"
 
 namespace CustomGrass
-{
-	struct FVolatileBuffers;
-	class FShadowParams;
-}
+{ struct FVolatileBuffers; class FShadowParams; }
 class FCustomGrassSceneProxy;
 class UCustomGrassDataAsset;
 class FCustomGrassRenderSystem;
@@ -111,15 +108,11 @@ public:
 
 	void RebuildRenderStateFromGameThread(const UCustomGrassDataAsset& DataAsset);
 	
-	CustomGrass::FTileDebugChannel TileDebugChannel;
+	void CompareAndCheckVSResourcesValidity(const CustomGrass::FProxyVertexShaderData* VSData) const;
 
-	void CompareAndCheckResourcesValidity(
-		const CustomGrass::FProxyVertexShaderData* VSData) const;
-
-protected:
-	TSharedPtr<FCustomGrassSceneViewExtension, ESPMode::ThreadSafe> SceneViewExtension;
-	friend class FCustomGrassSceneViewExtension;
+	CustomGrass::FRTDebugState GetDebugStateSnapshot_GameThread() const;
 	
+private:
 	void BeginFrame(FRDGBuilder& GraphBuilder);
 	void EndFrame(FRDGBuilder& GraphBuilder);
 	
@@ -141,10 +134,7 @@ protected:
 		FPrimitiveComponentId ComponentId;
 		const FCustomGrassSceneProxy* Proxy;
 
-		bool operator==(const FRegisteredProxy& Other) const
-		{
-			return ComponentId == Other.ComponentId;
-		}
+		bool operator==(const FRegisteredProxy& Other) const { return ComponentId == Other.ComponentId; }
 	};
 
 	TArray<FRegisteredProxy> RegisteredProxies;
@@ -156,7 +146,7 @@ protected:
 	bool IsViewSameBetweenFrames() const;
 
 	void SubmitWork(FRDGBuilder& GraphBuilder, const CustomGrass::FVolatileBuffers& Buffers);
-
+	
 	CustomGrass::FVolatileBuffers CreatePerFrameResources(FRDGBuilder& GraphBuilder) const;
 
 	float CalcTilePriorityScore(const FSceneView* View,
@@ -165,18 +155,7 @@ protected:
 	ECustomGrassLOD AssignTileLOD(const FSceneView* View,
 		const CustomGrass::FProxyLandscapeData& LandscapeData) const;
 	
-	/**
-	 * Each of these buffers is made up of several "partitions", one
-	 *  for each visible grass tile, in range [(N * i)... (N * i) + N - 1]
-	 *  where N represents a known value:
-	 *  - for instance data, grass blade number per tile;
-	 *  - for indirect draw args, the number of args which is 5.
-	 *  
-	 *  The index i is then per-frame and dynamic, meaning it's not necessarily
-	 *  associated to the same tile each frame.
-	 */
 	FRDGPooledBufferRef InstanceDataBuffer;
-
 	TStaticArray<FRDGPooledBufferRef, CustomGrass::MaxRenderedTiles> IndirectDrawArgsBuffer;
 
 	FRDGPooledTextureRef ShadowMapTextureAtlas;
@@ -187,20 +166,8 @@ protected:
 	void CreateTileAtlasMapping(FRDGBuilder& GraphBuilder);
 	
 	FDataAssetProxy DataAssetProxy;
-	void BuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
-	
-	CustomGrass::FGrassParams BuildGrassParams() const;
-	
-	CustomGrass::FShadowParams BuildShadowParams(
-		FRDGBuilder& GraphBuilder,
-		int32 TileIndex,
-		const CustomGrass::FVolatileBuffers& Buffers) const;
-	
-	CustomGrass::FLandscapeParams BuildLandscapeParams(
-		FRDGBuilder& GraphBuilder,
-		int32 TileIndex,
-		const CustomGrass::FProxyLandscapeData& LandscapeTile) const;
-	
+	void RebuildDataAssetProxy(const UCustomGrassDataAsset& DataAsset);
+
 	void AddComputePass_InstanceGrassBlades(
 		FRDGBuilder& GraphBuilder,
 		const CustomGrass::FProxyRenderWorkDesc& Work,
@@ -215,5 +182,20 @@ protected:
 		int32 TileIndex
 	) const;
 
-	FCriticalSection AddRenderingWorkCS;
+	TSharedPtr<FCustomGrassSceneViewExtension, ESPMode::ThreadSafe> SceneViewExtension;
+	friend class FCustomGrassSceneViewExtension;
+	
+	CustomGrass::FGrassParams BuildGrassParams() const;
+	
+	CustomGrass::FShadowParams BuildShadowParams(
+		FRDGBuilder& GraphBuilder,
+		int32 TileIndex,
+		const CustomGrass::FVolatileBuffers& Buffers) const;
+	
+	CustomGrass::FLandscapeParams BuildLandscapeParams(
+		FRDGBuilder& GraphBuilder,
+		int32 TileIndex,
+		const CustomGrass::FProxyLandscapeData& LandscapeTile) const;
+
+	CustomGrass::FTileDebugChannel TileDebugChannel;
 };

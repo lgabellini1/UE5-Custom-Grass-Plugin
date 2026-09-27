@@ -11,12 +11,9 @@ void UCustomGrassSettings::PostEditChangeProperty(FPropertyChangedEvent& Propert
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	if (PropertyChangedEvent.Property)
+	if (PropertyChangedEvent.Property &&
+		PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UCustomGrassSettings, GrassDataAsset))
 	{
-		if (PropertyChangedEvent.GetPropertyName() ==
-			GET_MEMBER_NAME_CHECKED(UCustomGrassSettings, GrassDataAsset))
-		{
-			CustomGrass::DataAssetLoaded.Broadcast();
-		}
+		CustomGrass::DataAssetLoaded.Broadcast();
 	}
 }

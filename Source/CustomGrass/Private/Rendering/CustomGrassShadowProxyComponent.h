@@ -28,7 +28,6 @@ protected:
 	static UMaterialInstanceDynamic* CreateMID(const UCustomGrassDataAsset& DataAsset,
 		const UCustomGrassPrimitiveComponent& ParentGrassTile);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 PlaneResolution = 64;
 
 	UPROPERTY()
@@ -45,7 +44,8 @@ public:
 	UStaticMesh* Build(UObject* Outer) const;
 
 private:
-	UStaticMeshDescription* BuildMeshDescription(const UStaticMesh* Mesh,
+	UStaticMeshDescription* BuildMeshDescription(
+		const UStaticMesh& Mesh,
 		UObject* Outer) const;
 
 	ULandscapeComponent& LandscapeTile;

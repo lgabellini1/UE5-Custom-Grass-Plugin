@@ -20,22 +20,20 @@ public:
 	struct FInitConfig
 	{
 		FCustomGrassMaterial Material;
+		ULandscapeComponent& AssociatedLandscapeTile;
 		int32 TileIndex;
 	};
 	
-	void Initialize(
-		const FInitConfig& Config,
-		ULandscapeComponent& AssociatedLandscapeTile,
-		const UCustomGrassWorldSubsystem& WorldSubsystem);
+	void Initialize(const FInitConfig& Config, const UCustomGrassWorldSubsystem& WorldSubsystem);
 
 	virtual void OnComponentCreated() override;
-
-	void UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset);
 
 	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials,
 		bool bGetDebugMaterials = false) const override;
 
-	ULandscapeComponent& GetAssociatedLandscapeTile() const { return *LandscapeTile; }
+	void UpdateRenderSettings(const UCustomGrassDataAsset& DataAsset);
+
+	ULandscapeComponent* GetAssociatedLandscapeTile() const { return LandscapeTile; }
 
 	FCustomGrassMaterial GetCustomGrassMaterial() const { return Material; }
 
@@ -43,13 +41,13 @@ protected:
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 
+	int32 TileIndex = INDEX_NONE;
+
 	UPROPERTY()
 	TObjectPtr<ULandscapeComponent> LandscapeTile;
 
 	UPROPERTY()
 	FCustomGrassMaterial Material;
-
-	int32 TileIndex = INDEX_NONE;
 
 	UPROPERTY()
 	TObjectPtr<UCustomGrassShadowProxyComponent> ShadowProxy;
