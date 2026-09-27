@@ -792,9 +792,4 @@ FDataAssetProxy::FDataAssetProxy(const UCustomGrassDataAsset& DataAsset)
 
 	bFixedLOD = DataAsset.bFixedLOD;
 	GlobalLOD = DataAsset.GlobalLOD;
-
-	WindParams = CustomGrass::FWindParams(
-		DataAsset.NoiseTexture ? DataAsset.NoiseTexture->GetResource() : nullptr,
-		DataAsset.WindDirection,
-		DataAsset.WindStrength);
 }

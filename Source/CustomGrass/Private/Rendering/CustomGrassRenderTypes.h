@@ -58,19 +58,11 @@ namespace CustomGrass
 		{}
 	};
 
-	struct FWindParams
-	{
-		FTextureResource* NoiseTexture;
-		FVector2f Direction;
-		float Strength;
-	};
-
 	struct FVertexShaderParams
 	{
 		float ViewSpaceCorrection;
 		float NormalRoundnessStrength;
 		float ShortHeightThreshold;
-		FWindParams WindParams;
 	};
 
 	struct FProxyLandscapeData

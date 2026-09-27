@@ -50,8 +50,6 @@ struct FDataAssetProxy
 	bool bShadowsOn;
 	float ShadowProxyZOffset;
 
-	CustomGrass::FWindParams WindParams;
-
 	bool bFixedLOD;
 	ECustomGrassLOD GlobalLOD;
 };

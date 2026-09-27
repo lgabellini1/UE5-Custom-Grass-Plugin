@@ -75,16 +75,6 @@ public:
 	float ShortHeightThreshold = 0.f;
 
 	
-	UPROPERTY(EditAnywhere, Category="Appearance|Wind", DisplayName="Animation Texture")
-	TObjectPtr<UTexture2D> NoiseTexture = nullptr;
-
-	UPROPERTY(EditAnywhere, Category="Appearance|Wind", DisplayName="Direction")
-	FVector2f WindDirection = FVector2f::ZeroVector;
-	
-	UPROPERTY(EditAnywhere, Category="Appearance|Wind", meta=(ClampMin="0"), DisplayName="Strength")
-	float WindStrength = 0.f;
-
-	
 	UPROPERTY(EditAnywhere, Category="Rendering")
 	float ViewSpaceCorrection = 0.f;
 

@@ -8,14 +8,6 @@ int TileBufferOffset;
 int GrassBladeVertexCount;
 int LOD;
 
-/* Wind */
-
-Texture2D<float> NoiseTexture;
-SamplerState NoiseSampler;
-float2 WindDirection;
-float WindStrength;
-float Time;
-
 /* Others */
 
 float MaxGrassHeight;
@@ -27,12 +19,6 @@ float NormalRoundnessStrength;
 float ViewSpaceCorrection;
 float ShortHeightThreshold;
 
-
-float3 ComputeWindEffect(float3 Position, float RelativeHeight)
-{
-	/* Todo: wind implementation */
-	return Position;
-}
 
 /**
  * Shifts vertex position in view-space to fake thickness when viewed perpendicularly.

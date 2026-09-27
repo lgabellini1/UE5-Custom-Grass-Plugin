@@ -102,12 +102,6 @@ void FCustomGrassVertexFactoryShaderParams::Bind(const FShaderParameterMap& Para
 	TileBufferOffset.Bind(ParameterMap, TEXT("TileBufferOffset"));
 	GrassBladeVertexCount.Bind(ParameterMap, TEXT("GrassBladeVertexCount"));
 	LOD.Bind(ParameterMap, TEXT("LOD"));
-	
-	NoiseTexture.Bind(ParameterMap, TEXT("NoiseTexture"));
-	NoiseSampler.Bind(ParameterMap, TEXT("NoiseSampler"));
-	WindDirection.Bind(ParameterMap, TEXT("WindDirection"));
-	WindStrength.Bind(ParameterMap, TEXT("WindStrength"));
-	Time.Bind(ParameterMap, TEXT("Time"));
 
 	MaxGrassHeight.Bind(ParameterMap, TEXT("MaxGrassHeight"));
 	MaxGrassWidth.Bind(ParameterMap, TEXT("MaxGrassWidth"));
@@ -156,13 +150,4 @@ void FCustomGrassVertexFactoryShaderParams::GetElementShaderBindings(
 	ShaderBindings.Add(ViewSpaceCorrection, DataAssetParams.ViewSpaceCorrection);
 	ShaderBindings.Add(NormalRoundnessStrength, DataAssetParams.NormalRoundnessStrength);
 	ShaderBindings.Add(ShortHeightThreshold, DataAssetParams.ShortHeightThreshold);
-
-	const FTextureRHIRef NoiseTextureRHI = DataAssetParams.WindParams.NoiseTexture ?
-		DataAssetParams.WindParams.NoiseTexture->GetTextureRHI() : GBlackTexture->GetTextureRHI();
-	
-	ShaderBindings.Add(NoiseTexture, NoiseTextureRHI);
-	ShaderBindings.Add(NoiseSampler, TStaticSamplerState<SF_Point>::GetRHI());
-	ShaderBindings.Add(WindDirection, DataAssetParams.WindParams.Direction.GetSafeNormal());
-	ShaderBindings.Add(WindStrength, DataAssetParams.WindParams.Strength);
-	ShaderBindings.Add(Time, VSData->GameTime);
 }
